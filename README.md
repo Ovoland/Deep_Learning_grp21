@@ -4,7 +4,7 @@
 
 Goal : Implcit Hate detetction 
 
-  1. Use HateBert and fine tuned it to detect : Implicit Hate, Explicit Hate , Not Hate
+  1. Use HateBert and fine tuned it to detect : Implicit Hate, Explicit Hate , Not Hate <br>
     Tokenizer : HertBert tokenizer <br>
     Model : HateBert <br>
     Num Label : 3 ( Impl, Expl, No)
