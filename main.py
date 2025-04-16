@@ -1,197 +1,145 @@
-"""
-File Name: main.py
+# %% [markdown]
+# # Détection de Discours Haineux Implicite avec HateBERT
+# 
+# ## 1. Imports et Configuration Initiale
 
-Descripton: ...
-
-Authors:   
-    Océane Voland
-    Thomas Cirillo
-    Jeremy Serillon
-    
-Date: 11 avril 2025
-Version: 1
-"""
-
-
-import time
+# %%
+import getpass
+import os
+import re
 import torch
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
+import random
+import evaluate 
 
-
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data import DataLoader
-from torch.optim import AdamW
+from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import BertForSequenceClassification
 from transformers import get_scheduler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from IPython.display import clear_output
+from torch.optim import AdamW
 
+# %% [markdown]
+# ## 2. Configuration
 
-##############################################
-############# GENERAL CONSTANTS ##############
-##############################################
-PATH_DATA = "data/implicit-hate-corpus/"
-
-PATH_DATA_STG1 = PATH_DATA + "/implicit_hate_v1_stg1_posts.tsv"
-PATH_DATA_STG2 = PATH_DATA + "implicit_hate_v1_stg2_posts.tsv"
-
-
-RANDOM_SEED = 42
-NUM_LABELS = 3
+# %%
+MODEL_NAME = 'GroNLP/hateBERT'
+DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-EPOCHS = 4
-BATCH_SIZE = 1
+BATCH_SIZE = 16
+EPOCHS = 3
+LEARNING_RATE = 2e-5
+TEST_SPLIT_SIZE = 0.2 # validation split
+RANDOM_SEED = 42
+NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
-##############################################
-################# FUNCTIONS ##################
-##############################################
+# Set device (GPU if available, else CPU)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Set seed for reproducibility
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+torch.manual_seed(RANDOM_SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(RANDOM_SEED)
 
-def setUpData(texts, labels,tokenizer):
-    # Spliting data (80% train and 20% test)
-    train_texts, test_texts, train_labels, test_labels = train_test_split(
-        texts, labels, test_size=0.2, random_state=RANDOM_SEED
-    )
+# %% [markdown]
+# ## 3. Import Data 
 
-    # TRAIN dataset
-    train_dataset = HateSpeechDataset(
-        texts=train_texts,
-        labels=train_labels,
-        tokenizer=tokenizer,
-        max_length=MAX_LENGTH
-    )
+# %%
+#PATH_DATA = "data/implicit-hate-corpus/"
+#PATH_INPUT_POSTS = "implicit_hate_v1_SAP_posts.tsv"
+#PATH_HATE_LABEL = "implicit_hate_v1_stg1.tsv"
+#PATH_CATEGORY_LABEL = "implicit_hate_v1_stg2.tsv"
 
-    # TESTING dataset
-    test_dataset = HateSpeechDataset(
-        texts=test_texts,
-        labels=test_labels,
-        tokenizer=tokenizer,
-        max_length=MAX_LENGTH
-    )
-
-
-    # DATALOADER for training set
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True
-    )
-
-    # DATALOADER for testing set
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False
-    )
-
-    return train_dataloader, test_dataloader
+#input = pd.read_csv(PATH_DATA + PATH_INPUT_POSTS, sep = '\t')
+#hate_labels = pd.read_csv(PATH_DATA + PATH_HATE_LABEL, sep = '\t')
+#category_labels = pd.read_csv(PATH_DATA + PATH_CATEGORY_LABEL, sep = '\t')
 
 
-def initCriterion(device):
-    # Class distribution from your dataset
-    class_counts = [13291, 7100, 1089]
-    total = sum(class_counts)
 
-    # Inverse frequency (optional: normalize)
-    class_weights = [total / c for c in class_counts]
-    class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
-
-    # Use weighted BCEWithLogitsLoss
-    criterion = BCEWithLogitsLoss(weight=class_weights)
-
-    return criterion
+data = pd.read_csv(DATA_PATH, sep = '\t')
+print(data)
 
 
-def train(model, train_dataloader, optimizer, device, EPOCHS=4):
+# %% [markdown]
+# ## 4. Data Set  Distribution 
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model.to(device)
+# %%
 
-    optimizer = AdamW(model.parameters(), lr=2e-5)
+class_counts = data['class'].value_counts()
 
-    num_training_steps = EPOCHS * len(train_dataloader)
-    # feel free to experiment with different num_warmup_steps
-    lr_scheduler = get_scheduler(
-        name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
-    )
-    progress_bar = tqdm(range(num_training_steps))
-    # put the model in train mode
-    model.train()
+# Plot
+ax = class_counts.plot(kind='bar', title='Class Distribution')
+plt.xlabel('Class')
+plt.ylabel('Count')
 
-    # iterate over epochs
-    for epoch in range(EPOCHS):
-        # iterate over batches in training set
-        for batch in train_dataloader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            # forward pass, get the outputs from the model
-            outputs = model(**batch)
-            # get the loss from the outputs
-            loss = outputs.loss
+for i, count in enumerate(class_counts):
+    plt.text(i, count + max(class_counts)*0.01, str(count), ha='center', va='bottom', fontsize=10)
 
-            # do the backward pass
-            loss.backward()
+plt.tight_layout()
+plt.show()
 
-            # perform one step of the optimizer
-            optimizer.step()
+# %% [markdown]
+# ## 5. Data preparation (labels and text extraction and remaping)
 
-            # peform one step of the lr_scheduler, similar with the optimizer
-            lr_scheduler.step()
-        
-            # zero the gradients, call zero_grad() on the optimizer
-            optimizer.zero_grad()
-            #Facilitate the update of the bar by creating artifical waiting time
-            time.sleep(0.01)
-
-            progress_bar.update(1)
+# %%
+# Label mappings
+id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
+label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
 
 
-def test(model, test_dataloader, device):
-    # Initialize lists to store predictions and true labels
-    all_predictions = []
-    all_labels = []
+# Load data text
+texts = data['post'].values
 
-    progress_bar = tqdm(range(len(test_dataloader)))
+# Print raw numeric labels
+print("Labels before mapping: \n", data['class'].values[:11])
 
-    # put the model in eval mode
-    model.eval()
-    # iterate over batches of evaluation dataset
-    for batch in test_dataloader:
-        batch = {k: v.to(device) for k, v in batch.items()}
-        with torch.no_grad():
-            # forward pass, get the outputs from the model
-            outputs = model(**batch)
-
-        #get the logits from the outputs
-        logits = outputs.logits
-
-        # use argmax to get the predicted class
-        predictions = torch.argmax(logits, dim=-1)
-        
-        # Append predictions and true labels to the lists
-        all_predictions.extend(predictions.cpu().numpy())
-        all_labels.extend(batch["labels"].cpu().numpy())
-
-        progress_bar.update(1)
-
-    # Calculate metrics
-    accuracy = accuracy_score(all_labels, all_predictions)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        all_labels, all_predictions, average="weighted", zero_division=0
-    )
-    # Print the results
-    print(f"Accuracy: {accuracy}")
-    print(f"Precision: {precision}")
-    print(f"Recall: {recall}")
-    print(f"F1 Score: {f1}")
+# Map labels to numeric values
+data['class'] = data['class'].map(label2id)
+labels = data['class'].values
+# Print string labels
+print("Labels after mapping:  ", labels[:11])
 
 
-##############################################
-################## CLASSES ###################
-##############################################
+# %%
+data = data.head(20)
 
+# %% [markdown]
+# # 6. Load Hate Bert model
+# 
+# We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
+
+# %%
+model = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_NAME,
+    num_labels=NUM_LABELS,
+    id2label=id2label, 
+    label2id=label2id,
+    output_attentions=False,
+    output_hidden_states=False
+)
+
+print(model.num_parameters())
+
+# %% [markdown]
+# # 7. Load Tokenizer
+# 
+# From hugging face plateforme, we can also load the tokenizer specially made for Hate Bert
+
+# %%
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+# %% [markdown]
+# # 8. Dataset Initialization
+
+# %%
 class HateSpeechDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length):
         self.texts = texts
@@ -226,39 +174,292 @@ class HateSpeechDataset(Dataset):
         
            
 
-##############################################
-################### MAIN #####################
-##############################################
+# %% [markdown]
+# # 9. Dataset and DataLoader Splitting
 
-def main():
-    # Load the data 
-    data = pd.read_csv(PATH_DATA_STG1, sep = '\t')
-    # Extract a subset of the data that are really going to be used
-    data = data.head(20)
+# %%
+# Spliting data (80% train and 20% test)
+train_texts, test_texts, train_labels, test_labels = train_test_split(
+    texts, labels, test_size=0.2, random_state=RANDOM_SEED
+)
+
+# TRAIN dataset
+train_dataset = HateSpeechDataset(
+    texts=train_texts,
+    labels=train_labels,
+    tokenizer=tokenizer,
+    max_length=MAX_LENGTH
+)
+
+# TESTING dataset
+test_dataset = HateSpeechDataset(
+    texts=test_texts,
+    labels=test_labels,
+    tokenizer=tokenizer,
+    max_length=MAX_LENGTH
+)
 
 
-    id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
-    label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
+# DATALOADER for training set
+train_dataloader = DataLoader(
+    train_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=True
+)
 
-    # Load the model
-    model = AutoModelForSequenceClassification.from_pretrained(
-        "GroNLP/hateBERT",
-        num_labels=NUM_LABELS,
-        id2label=id2label, 
-        label2id=label2id,
-    )
+# DATALOADER for testing set
+test_dataloader = DataLoader(
+    test_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False
+)
+
+# %% [markdown]
+# # 10. Training Configuration
+# 
+# We use the default training configuration from the kaggle page
+
+# %%
+optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+
+# Class distribution from your dataset
+class_counts = [13291, 7100, 1089]
+total = sum(class_counts)
+
+# Inverse frequency (optional: normalize)
+class_weights = [total / c for c in class_counts]
+class_weights = torch.tensor(class_weights, dtype=torch.float32).to(device)
+
+# Use weighted BCEWithLogitsLoss
+criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+
+model.to(device)
+
+
+# %% [markdown]
+# # 11. Scheduler 
+
+# %%
+num_training_steps = EPOCHS * len(train_dataloader)
+# feel free to experiment with different num_warmup_steps
+lr_scheduler = get_scheduler(
+    name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+)
+
+# %% [markdown]
+# # 12. Training 
+
+# %%
+def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, epoch, progress_bar):
+    # Put the model in train mode
+    model.train()
+
+    # Initialize epoch loss
+    epoch_loss = 0
+
+    # Use tqdm for iterating over the dataloader to see epoch progress
+    train_iterator = tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{EPOCHS} Training', leave=False)
+
+    # Iterate over batches in training set
+    for batch in train_iterator:
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        target = batch["labels"]  # Get the target labels
+
+        # Forward pass, get the outputs from the model
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=target)
+        logits = outputs.logits
+
+        # Compute the loss
+        loss = criterion(logits, target)
+
+        # Backward pass
+        loss.backward()
+
+        # Perform one step of the optimizer
+        optimizer.step()
+
+        # Learning rate scheduler step
+        if 'lr_scheduler' in globals():
+            lr_scheduler.step()
+
+        # Zero the gradients
+        optimizer.zero_grad()
+
+        # Update progress bar
+        progress_bar.update(1)
+
+        # Use argmax to get the predicted class
+        preds = torch.argmax(logits, dim=1)
+
+        # Update each metric with the current batch
+        for metric_name, metric in metrics.items():
+            metric.add_batch(predictions=preds.cpu().numpy(), references=target.cpu().numpy())
+
+        # Update loss
+        epoch_loss += loss.item()
+
+    # Compute final metrics after all batches
+    epoch_metrics = {metric_name: metric.compute() for metric_name, metric in metrics.items()}
+
+    # Average the loss over all batches
+    epoch_loss /= len(train_dataloader)
+
+    # Clear the output and print epoch statistics
+    clear_output()  # Clean the prints from previous epochs
+    print('Train Loss: {:.4f}, '.format(epoch_loss),
+          ', '.join(['{}: {:.4f}'.format(k, v) for k, v in epoch_metrics.items()]))
+
+    return epoch_loss, epoch_metrics
+
+# %% [markdown]
+# # 13. Testing
+
+# %%
+def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_bar):
+    # Put the model in eval mode
+    model.eval()
     
-    # Load the tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("GroNLP/hateBERT")
+    # Initialize lists to store predictions and true labels
+    all_predictions = []
+    all_labels = []
+
+    epoch_loss = 0
+
+    # Use tqdm for the evaluation dataloader
+    eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
+
+    # Iterate over batches of evaluation dataset
+    for batch in eval_iterator:
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        target = batch["labels"]  # Get the target labels
+
+        with torch.no_grad():
+            # Forward pass, get the outputs from the model
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=target)
+
+        # Get the logits from the outputs
+        logits = outputs.logits
+
+        # Compute the loss
+        loss = criterion(logits, target)
     
-    train_dataloader, test_dataloader = setUpData(data['text'], data['label'],tokenizer)
+        # Use argmax to get the predicted class
+        preds = torch.argmax(logits, dim=-1)
+        
+        # Append predictions and true labels to the lists
+        all_predictions.extend(preds.cpu().numpy())
+        all_labels.extend(target.cpu().numpy())
 
-    criterion = initCriterion()
+        # Update each metric with the current batch
+        for metric_name, metric in metrics.items():
+            metric.add_batch(predictions=preds.cpu().numpy(), references=target.cpu().numpy())
 
-    train(model, train_dataloader, criterion, device="cuda", EPOCHS=EPOCHS)
-    test(model, test_dataloader, device="cuda")
-
-    return
+        # Update loss
+        epoch_loss += loss.item()
     
-if __name__ == "__main__":
-    main()
+        progress_bar.update(1)
+        
+    # Compute final metrics after all batches
+    epoch_metrics = {metric_name: metric.compute() for metric_name, metric in metrics.items()}
+
+    # Average the loss over all batches
+    epoch_loss /= len(test_dataloader)
+
+    # Print evaluation results
+    print('Eval Loss: {:.4f}, '.format(epoch_loss),
+          ', '.join(['{}: {:.4f}'.format(k, v) for k, v in epoch_metrics.items()]))
+
+    return epoch_loss, epoch_metrics
+
+# %% [markdown]
+# # 14. Plotting the training and testing
+
+# %%
+def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test_metrics_logs):
+    fig, ax = plt.subplots(1, len(metrics_names) + 1, figsize=((len(metrics_names) + 1) * 5, 5))
+
+    ax[0].plot(train_loss, c='blue', label='train')
+    ax[0].plot(test_loss, c='orange', label='test')
+    ax[0].set_title('Loss')
+    ax[0].set_xlabel('epoch')
+    ax[0].legend()
+
+    for i in range(len(metrics_names)):
+        ax[i + 1].plot(train_metrics_logs[i], c='blue', label='train')
+        ax[i + 1].plot(test_metrics_logs[i], c='orange', label='test')
+        ax[i + 1].set_title(metrics_names[i])
+        ax[i + 1].set_xlabel('epoch')
+        ax[i + 1].legend()
+
+    plt.show()
+
+def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
+    '''
+    - metrics_names: the keys/names of the logged metrics
+    - metrics_log: existing metrics log that will be updated
+    - new_metrics_dict: epoch_metrics output from train_epoch and evaluate functions
+    '''
+    for i in range(len(metrics_names)):
+        curr_metric_name = metrics_names[i]
+        metrics_log[i].append(new_metrics_dict[curr_metric_name])
+    return metrics_log
+
+# %% [markdown]
+# # 15. Iterative training and testing
+
+# %%
+def training_model(model, optimizer, criterion, metrics, train_loader, test_loader, n_epochs, device):
+    train_loss_log,  test_loss_log = [], []
+    metrics_names = list(metrics.keys())
+    train_metrics_log = [[] for i in range(len(metrics))]
+    test_metrics_log = [[] for i in range(len(metrics))]
+
+    num_training_steps = n_epochs * len(train_dataloader)
+
+    progress_bar = tqdm(range(num_training_steps), desc="Training Progress")
+
+    print(f"Starting training for {EPOCHS} epochs...") # Use EPOCHS from config
+
+    for epoch in range(n_epochs):
+        print("Epoch {0} of {1}".format(epoch, n_epochs))
+        train_loss, train_metrics = train_epoch(model, optimizer, criterion, metrics, train_loader, device,epoch, progress_bar)
+
+        test_loss, test_metrics = testing(model, criterion, metrics, test_loader, device)
+
+        train_loss_log.append(train_loss)
+        train_metrics_log = update_metrics_log(metrics_names, train_metrics_log, train_metrics)
+
+        test_loss_log.append(test_loss)
+        test_metrics_log = update_metrics_log(metrics_names, test_metrics_log, test_metrics)
+
+        plot_training(train_loss_log, test_loss_log, metrics_names, train_metrics_log, test_metrics_log)
+
+    progress_bar.close()
+    print("Training completed.")
+    return train_metrics_log, test_metrics_log
+
+
+# %% [markdown]
+# # 16. Main
+
+# %%
+metrics = {'ACC': evaluate.load("accuracy"), 'F1-weighted': evaluate.load("f1", average="weighted")}
+
+model.to(device)
+criterion.to(device)
+
+train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion, metrics, train_dataloader, test_dataloader, n_epochs=EPOCHS, device=device)
+
+# save model weights
+results_models_weights_dir = 'models_weights/'
+if not os.path.exists(results_models_weights_dir):
+    os.mkdir(results_models_weights_dir)
+torch.save(model.state_dict(), results_models_weights_dir + 'base_model.pth')
+
+
