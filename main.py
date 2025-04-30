@@ -2,6 +2,7 @@
 # # Détection de Discours Haineux Implicite avec HateBERT
 # 
 # ## 1. Imports et Configuration Initiale
+
 # %%
 import getpass
 import os
@@ -82,7 +83,9 @@ for i, count in enumerate(class_counts):
     plt.text(i, count + max(class_counts)*0.01, str(count), ha='center', va='bottom', fontsize=10)
 
 plt.tight_layout()
-plt.show()
+plt.savefig("results/figures/class_distribution.png")
+#plt.show()
+plt.close()
 
 # %% [markdown]
 # ## 5. Data preparation (labels and text extraction and remaping)
@@ -400,8 +403,9 @@ def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test
         ax[i + 1].legend()
 
     fig.suptitle("Training result of HateBert")
-    fig.savefig('figures/training_plot.png')
-    plt.show()
+    fig.savefig('results/figures/training_plot.png')
+    #plt.show()
+    plt.close()
 
 def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
     '''
@@ -471,7 +475,7 @@ criterion.to(device)
 train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion, metrics, train_dataloader, test_dataloader, n_epochs=EPOCHS, device=device)
 
 # save model weights
-results_models_weights_dir = 'models_weights/'
+results_models_weights_dir = 'results/models_weights/'
 if not os.path.exists(results_models_weights_dir):
     os.mkdir(results_models_weights_dir)
 torch.save(model.state_dict(), results_models_weights_dir + 'base_model.pth')
