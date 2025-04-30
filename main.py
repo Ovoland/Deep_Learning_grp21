@@ -2,7 +2,6 @@
 # # Détection de Discours Haineux Implicite avec HateBERT
 # 
 # ## 1. Imports et Configuration Initiale
-
 # %%
 import getpass
 import os
@@ -12,7 +11,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import random
-import evaluate 
 
 from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
@@ -22,6 +20,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score, accuracy_score
 from IPython.display import clear_output
 from torch.optim import AdamW
 
@@ -67,7 +66,6 @@ if torch.cuda.is_available():
 data = pd.read_csv(DATA_PATH, sep = '\t')
 print(data)
 
-
 # %% [markdown]
 # ## 4. Data Set  Distribution 
 
@@ -90,6 +88,9 @@ plt.show()
 # ## 5. Data preparation (labels and text extraction and remaping)
 
 # %%
+#Can select only a subset of the data
+data = data.head(20)
+
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
 label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
@@ -107,9 +108,6 @@ labels = data['class'].values
 # Print string labels
 print("Labels after mapping:  ", labels[:11])
 
-
-# %%
-data = data.head(20)
 
 # %% [markdown]
 # # 6. Load Hate Bert model
@@ -235,7 +233,6 @@ criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
 model.to(device)
 
-
 # %% [markdown]
 # # 11. Scheduler 
 
@@ -256,6 +253,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
 
     # Initialize epoch loss
     epoch_loss = 0
+    epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
 
     # Use tqdm for iterating over the dataloader to see epoch progress
     train_iterator = tqdm(train_dataloader, desc=f'Epoch {epoch + 1}/{EPOCHS} Training', leave=False)
@@ -295,15 +293,17 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         preds = torch.argmax(logits, dim=1)
 
         # Update each metric with the current batch
-        for metric_name, metric in metrics.items():
-            metric.add_batch(predictions=preds.cpu().numpy(), references=target.cpu().numpy())
+        with torch.no_grad():
+            for k in epoch_metrics.keys():
+                epoch_metrics[k] += metrics[k](preds.cpu(), target.cpu())
 
         # Update loss
         epoch_loss += loss.item()
-
-    # Compute final metrics after all batches
-    epoch_metrics = {metric_name: metric.compute() for metric_name, metric in metrics.items()}
-
+        
+    # for the epoch loss, we compute the average of the metrics over the mini-batches
+    for k in epoch_metrics.keys():
+          epoch_metrics[k] /= len(train_dataloader)
+    
     # Average the loss over all batches
     epoch_loss /= len(train_dataloader)
 
@@ -327,6 +327,7 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
     all_labels = []
 
     epoch_loss = 0
+    epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
 
     # Use tqdm for the evaluation dataloader
     eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
@@ -343,8 +344,8 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
             # Forward pass, get the outputs from the model
             outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=target)
 
-        # Get the logits from the outputs
-        logits = outputs.logits
+            # Get the logits from the outputs
+            logits = outputs.logits
 
         # Compute the loss
         loss = criterion(logits, target)
@@ -357,17 +358,18 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
         all_labels.extend(target.cpu().numpy())
 
         # Update each metric with the current batch
-        for metric_name, metric in metrics.items():
-            metric.add_batch(predictions=preds.cpu().numpy(), references=target.cpu().numpy())
-
+        with torch.no_grad():
+            for k in epoch_metrics.keys():
+                epoch_metrics[k] += metrics[k](preds.cpu(), target.cpu())
+                
         # Update loss
         epoch_loss += loss.item()
     
         progress_bar.update(1)
-        
-    # Compute final metrics after all batches
-    epoch_metrics = {metric_name: metric.compute() for metric_name, metric in metrics.items()}
 
+    for k in epoch_metrics.keys():
+          epoch_metrics[k] /= len(test_dataloader)
+        
     # Average the loss over all batches
     epoch_loss /= len(test_dataloader)
 
@@ -381,7 +383,7 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
 # # 14. Plotting the training and testing
 
 # %%
-def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test_metrics_logs):
+def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test_metrics_logs, savePicture = True):
     fig, ax = plt.subplots(1, len(metrics_names) + 1, figsize=((len(metrics_names) + 1) * 5, 5))
 
     ax[0].plot(train_loss, c='blue', label='train')
@@ -397,6 +399,8 @@ def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test
         ax[i + 1].set_xlabel('epoch')
         ax[i + 1].legend()
 
+    fig.suptitle("Training result of HateBert")
+    fig.savefig('figures/training_plot.png')
     plt.show()
 
 def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
@@ -430,7 +434,7 @@ def training_model(model, optimizer, criterion, metrics, train_loader, test_load
         print("Epoch {0} of {1}".format(epoch, n_epochs))
         train_loss, train_metrics = train_epoch(model, optimizer, criterion, metrics, train_loader, device,epoch, progress_bar)
 
-        test_loss, test_metrics = testing(model, criterion, metrics, test_loader, device)
+        test_loss, test_metrics = testing(model, criterion, metrics, test_loader, device,epoch, progress_bar)
 
         train_loss_log.append(train_loss)
         train_metrics_log = update_metrics_log(metrics_names, train_metrics_log, train_metrics)
@@ -446,10 +450,20 @@ def training_model(model, optimizer, criterion, metrics, train_loader, test_load
 
 
 # %% [markdown]
-# # 16. Main
+# # 16 Evaluation metrics
 
 # %%
-metrics = {'ACC': evaluate.load("accuracy"), 'F1-weighted': evaluate.load("f1", average="weighted")}
+def f1(preds, target):
+    return f1_score(target, preds, average='macro')
+
+def acc(preds, target):
+    return accuracy_score(target, preds)
+
+# %% [markdown]
+# # 17. Main
+
+# %%
+metrics = {'ACC': acc, 'F1-weighted': f1}
 
 model.to(device)
 criterion.to(device)
@@ -461,5 +475,48 @@ results_models_weights_dir = 'models_weights/'
 if not os.path.exists(results_models_weights_dir):
     os.mkdir(results_models_weights_dir)
 torch.save(model.state_dict(), results_models_weights_dir + 'base_model.pth')
+
+# %% [markdown]
+# # Classification example
+
+# %%
+n = -1
+example_text = texts[n]
+example_label = labels[n]
+print(f"Example classification: {id2label[example_label]}")
+
+# %%
+def classification(example_text, example_label): 
+    #Using the HateBertDataLoader is a bit overkilled, we can just tokenize the input
+    encoded_input = tokenizer(
+        example_text,
+        add_special_tokens=True,
+        max_length=MAX_LENGTH,
+        padding='max_length',
+        truncation=True,
+        return_tensors='pt'
+    ).to(device)
+    
+    model.eval()
+    
+    with torch.no_grad():
+        # Forward pass, get the outputs from the model
+        outputs = model(**encoded_input)
+        
+        # Get the logits from the outputs
+        logits = outputs.logits
+    
+    # Use argmax to get the predicted class
+    preds = torch.argmax(logits, dim=-1)
+    
+    print(f"Example sentence: {example_text}")
+    print(f" ---- Model classification: {id2label[int(preds)]}") 
+    print(f" ---- Real classification: {id2label[example_label]} \n")
+
+# %%
+for n in range(0,-5,-1):
+    example_text = texts[n]
+    example_label = labels[n]
+    classification(example_text, example_label)
 
 
