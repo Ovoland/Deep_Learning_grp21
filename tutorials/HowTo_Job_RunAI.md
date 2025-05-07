@@ -96,3 +96,19 @@ Pour mettre transformers indépendament de la dockerimage:
 ```python
 >>> pip install transformers
 ```
+
+.
+
+.
+
+.
+
+### Ancien fichier "runai_submit_jobs.sh" de Jeremy
+```bash
+#runai submit --name test2 --image registry.rcp.epfl.ch/ee-559-serillon/my-toolbox:v0.1 --gpu 1 --node-pools v100 --pvc home:${HOME} -e HOME=${HOME} --command -- python3 ~/Deep_Learning_grp21/main.py
+runai submit --name test2 --image registry.rcp.epfl.ch/ee-559-serillon/my-toolbox:v0.1 --gpu 1 --pvc course-ee-559-scratch:/scratch --pvc home:/pvc/home --command -- python3 /pvc/home/Deep_Learning_grp21/main.py
+
+runai submit --image registry.rcp.epfl.ch/ee-559-serillon/new_toolbox:v0.1 --gpu 1 --pvc course-ee-559-scratch:/scratch --pvc home:/pvc/home --interactive --attach
+
+runai submit  --run-as-user --image nvcr.io/nvidia/ai-workbench/pytorch:1.0.6 --gpu 1 --pvc course-ee-559-scratch:/scratch --pvc home:/pvc/home --interactive --attach
+```
