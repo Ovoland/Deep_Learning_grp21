@@ -84,7 +84,7 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
-data = data.head(40)
+#data = data.head(40)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
