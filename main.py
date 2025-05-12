@@ -31,12 +31,16 @@ from torch.optim import AdamW
 # %%
 MODEL_NAME = 'GroNLP/hateBERT'
 DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+RESULTS_PATH = 'results/'
+FIGURES_RESULTS_PATH = RESULTS_PATH + 'figures/'
+MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
+
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 16
+BATCH_SIZE = 2
 EPOCHS = 3
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
-RANDOM_SEED = 42
+RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
@@ -53,17 +57,6 @@ if torch.cuda.is_available():
 # ## 3. Import Data 
 
 # %%
-#PATH_DATA = "data/implicit-hate-corpus/"
-#PATH_INPUT_POSTS = "implicit_hate_v1_SAP_posts.tsv"
-#PATH_HATE_LABEL = "implicit_hate_v1_stg1.tsv"
-#PATH_CATEGORY_LABEL = "implicit_hate_v1_stg2.tsv"
-
-#input = pd.read_csv(PATH_DATA + PATH_INPUT_POSTS, sep = '\t')
-#hate_labels = pd.read_csv(PATH_DATA + PATH_HATE_LABEL, sep = '\t')
-#category_labels = pd.read_csv(PATH_DATA + PATH_CATEGORY_LABEL, sep = '\t')
-
-
-
 data = pd.read_csv(DATA_PATH, sep = '\t')
 print(data)
 
@@ -71,7 +64,6 @@ print(data)
 # ## 4. Data Set  Distribution 
 
 # %%
-
 class_counts = data['class'].value_counts()
 
 # Plot
@@ -83,7 +75,7 @@ for i, count in enumerate(class_counts):
     plt.text(i, count + max(class_counts)*0.01, str(count), ha='center', va='bottom', fontsize=10)
 
 plt.tight_layout()
-plt.savefig("results/figures/class_distribution.png")
+plt.savefig(FIGURES_RESULTS_PATH + "class_distribution.png")
 #plt.show()
 plt.close()
 
@@ -92,7 +84,7 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
-data = data.head(20)
+data = data.head(40)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
@@ -178,16 +170,36 @@ class HateSpeechDataset(Dataset):
 # %% [markdown]
 # # 9. Dataset and DataLoader Splitting
 
+# %% [markdown]
+# To train our model, we will split the data in 3 categories as it is usually recommanded:
+# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
+# - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
+# 
+# [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
+
 # %%
-# Spliting data (80% train and 20% test)
+# Spliting data (60% train, 20% validation and 20% test)
 train_texts, test_texts, train_labels, test_labels = train_test_split(
     texts, labels, test_size=0.2, random_state=RANDOM_SEED
+)
+# splitting by 0.25 because: 0.25 x 0.8 = 0.2
+train_texts, val_texts, train_labels, val_labels = train_test_split(
+    train_texts, train_labels, test_size=0.25, random_state=RANDOM_SEED
 )
 
 # TRAIN dataset
 train_dataset = HateSpeechDataset(
     texts=train_texts,
     labels=train_labels,
+    tokenizer=tokenizer,
+    max_length=MAX_LENGTH
+)
+
+# VALIDATION dataset
+val_dataset = HateSpeechDataset(
+    texts=val_texts,
+    labels=val_labels,
     tokenizer=tokenizer,
     max_length=MAX_LENGTH
 )
@@ -208,6 +220,13 @@ train_dataloader = DataLoader(
     shuffle=True
 )
 
+# DATALOADER for validation set
+val_dataloader = DataLoader(
+    val_dataset,
+    batch_size=BATCH_SIZE,
+    shuffle=False
+)
+
 # DATALOADER for testing set
 test_dataloader = DataLoader(
     test_dataset,
@@ -224,7 +243,7 @@ test_dataloader = DataLoader(
 optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
 
 # Class distribution from your dataset
-class_counts = [13291, 7100, 1089]
+class_counts = class_counts
 total = sum(class_counts)
 
 # Inverse frequency (optional: normalize)
@@ -254,6 +273,10 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
     # Put the model in train mode
     model.train()
 
+    # Initialize lists to store predictions and true labels
+    all_predictions = []
+    all_labels = []
+    
     # Initialize epoch loss
     epoch_loss = 0
     epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
@@ -295,17 +318,15 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         # Use argmax to get the predicted class
         preds = torch.argmax(logits, dim=1)
 
-        # Update each metric with the current batch
-        with torch.no_grad():
-            for k in epoch_metrics.keys():
-                epoch_metrics[k] += metrics[k](preds.cpu(), target.cpu())
-
+         # Append predictions and true labels to the lists
+        all_predictions.extend(preds.cpu().numpy())
+        all_labels.extend(target.cpu().numpy())
+        
         # Update loss
         epoch_loss += loss.item()
         
-    # for the epoch loss, we compute the average of the metrics over the mini-batches
-    for k in epoch_metrics.keys():
-          epoch_metrics[k] /= len(train_dataloader)
+    epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+
     
     # Average the loss over all batches
     epoch_loss /= len(train_dataloader)
@@ -318,10 +339,10 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
     return epoch_loss, epoch_metrics
 
 # %% [markdown]
-# # 13. Testing
+# # 13. Validation
 
 # %%
-def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_bar):
+def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
     # Put the model in eval mode
     model.eval()
     
@@ -333,7 +354,7 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
     epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
 
     # Use tqdm for the evaluation dataloader
-    eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
+    eval_iterator = tqdm(val_dataloader, desc='Evaluating Validation Set')
 
     # Iterate over batches of evaluation dataset
     for batch in eval_iterator:
@@ -359,22 +380,16 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
         # Append predictions and true labels to the lists
         all_predictions.extend(preds.cpu().numpy())
         all_labels.extend(target.cpu().numpy())
-
-        # Update each metric with the current batch
-        with torch.no_grad():
-            for k in epoch_metrics.keys():
-                epoch_metrics[k] += metrics[k](preds.cpu(), target.cpu())
-                
+        
         # Update loss
         epoch_loss += loss.item()
     
         progress_bar.update(1)
-
-    for k in epoch_metrics.keys():
-          epoch_metrics[k] /= len(test_dataloader)
+        
+    epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
         
     # Average the loss over all batches
-    epoch_loss /= len(test_dataloader)
+    epoch_loss /= len(val_dataloader)
 
     # Print evaluation results
     print('Eval Loss: {:.4f}, '.format(epoch_loss),
@@ -386,18 +401,18 @@ def testing(model, criterion, metrics, test_dataloader, device, epoch, progress_
 # # 14. Plotting the training and testing
 
 # %%
-def plot_training(train_loss, test_loss, metrics_names, train_metrics_logs, test_metrics_logs, savePicture = True):
+def plot_training(train_loss, val_loss, metrics_names, train_metrics_logs, test_metrics_logs, savePicture = True):
     fig, ax = plt.subplots(1, len(metrics_names) + 1, figsize=((len(metrics_names) + 1) * 5, 5))
 
     ax[0].plot(train_loss, c='blue', label='train')
-    ax[0].plot(test_loss, c='orange', label='test')
+    ax[0].plot(val_loss, c='orange', label='validation')
     ax[0].set_title('Loss')
     ax[0].set_xlabel('epoch')
     ax[0].legend()
 
     for i in range(len(metrics_names)):
         ax[i + 1].plot(train_metrics_logs[i], c='blue', label='train')
-        ax[i + 1].plot(test_metrics_logs[i], c='orange', label='test')
+        ax[i + 1].plot(test_metrics_logs[i], c='orange', label='validation')
         ax[i + 1].set_title(metrics_names[i])
         ax[i + 1].set_xlabel('epoch')
         ax[i + 1].legend()
@@ -419,14 +434,14 @@ def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
     return metrics_log
 
 # %% [markdown]
-# # 15. Iterative training and testing
+# # 15. Iterative training and validating
 
 # %%
-def training_model(model, optimizer, criterion, metrics, train_loader, test_loader, n_epochs, device):
+def training_model(model, optimizer, criterion, metrics, train_loader, val_loader, n_epochs, device):
     train_loss_log,  test_loss_log = [], []
     metrics_names = list(metrics.keys())
     train_metrics_log = [[] for i in range(len(metrics))]
-    test_metrics_log = [[] for i in range(len(metrics))]
+    val_metrics_log = [[] for i in range(len(metrics))]
 
     num_training_steps = n_epochs * len(train_dataloader)
 
@@ -438,19 +453,19 @@ def training_model(model, optimizer, criterion, metrics, train_loader, test_load
         print("Epoch {0} of {1}".format(epoch, n_epochs))
         train_loss, train_metrics = train_epoch(model, optimizer, criterion, metrics, train_loader, device,epoch, progress_bar)
 
-        test_loss, test_metrics = testing(model, criterion, metrics, test_loader, device,epoch, progress_bar)
+        test_loss, test_metrics = validation(model, criterion, metrics, val_loader, device, progress_bar)
 
         train_loss_log.append(train_loss)
         train_metrics_log = update_metrics_log(metrics_names, train_metrics_log, train_metrics)
 
         test_loss_log.append(test_loss)
-        test_metrics_log = update_metrics_log(metrics_names, test_metrics_log, test_metrics)
+        val_metrics_log = update_metrics_log(metrics_names, val_metrics_log, test_metrics)
 
-        plot_training(train_loss_log, test_loss_log, metrics_names, train_metrics_log, test_metrics_log)
+        plot_training(train_loss_log, test_loss_log, metrics_names, train_metrics_log, val_metrics_log)
 
     progress_bar.close()
     print("Training completed.")
-    return train_metrics_log, test_metrics_log
+    return train_metrics_log, val_metrics_log
 
 
 # %% [markdown]
@@ -472,25 +487,105 @@ metrics = {'ACC': acc, 'F1-weighted': f1}
 model.to(device)
 criterion.to(device)
 
-train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion, metrics, train_dataloader, test_dataloader, n_epochs=EPOCHS, device=device)
+train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion, metrics, train_dataloader, val_dataloader, n_epochs=EPOCHS, device=device)
 
 # save model weights
-results_models_weights_dir = 'results/models_weights/'
-if not os.path.exists(results_models_weights_dir):
-    os.mkdir(results_models_weights_dir)
-torch.save(model.state_dict(), results_models_weights_dir + 'base_model.pth')
+if not os.path.exists(MODELS_WEIGHTS_PATH):
+    os.mkdir(MODELS_WEIGHTS_PATH)
+torch.save(model.state_dict(), MODELS_WEIGHTS_PATH + 'base_model.pth')
 
 # %% [markdown]
-# # Classification example
+# # 18. Testing 
 
 # %%
-n = -1
-example_text = texts[n]
-example_label = labels[n]
-print(f"Example classification: {id2label[example_label]}")
+def testing(model, metrics, test_dataloader, device, progress_bar):
+    # Put the model in eval mode
+    model.eval()
+    
+    # Initialize lists to store predictions and true labels
+    all_predictions = []
+    all_labels = []
+
+    epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
+
+    # Use tqdm for the evaluation dataloader
+    eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
+
+    # Iterate over batches of evaluation dataset
+    for batch in eval_iterator:
+        batch = {k: v.to(device) for k, v in batch.items()}
+
+        input_ids = batch["input_ids"]
+        attention_mask = batch["attention_mask"]
+        target = batch["labels"]  # Get the target labels
+
+        with torch.no_grad():
+            # Forward pass, get the outputs from the model
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=target)
+
+            # Get the logits from the outputs
+            logits = outputs.logits
+    
+        # Use argmax to get the predicted class
+        preds = torch.argmax(logits, dim=-1)
+        
+        # Append predictions and true labels to the lists
+        all_predictions.extend(preds.cpu().numpy())
+        all_labels.extend(target.cpu().numpy())
+
+        progress_bar.update(1)
+
+    # Compute metrics on the entire dataset
+    epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+        
+    return epoch_metrics
 
 # %%
-def classification(example_text, example_label): 
+def testing_process(model, metrics, test_dataloader, device):
+    metrics_names = list(metrics.keys())
+
+    # Use tqdm for the evaluation dataloader
+    num_testing_steps = len(test_dataloader)
+    progress_bar = tqdm(range(num_testing_steps), desc="Testing Progress")
+
+    test_metrics = testing(model, metrics, test_dataloader, device, progress_bar)
+    
+    progress_bar.close()
+    print("Training completed.")
+    return test_metrics
+
+# %%
+def saveMetrics(metrics, title):
+    with open(RESULTS_PATH + "testing_results.txt", "w") as f:
+        f.write(f"{title} \n")
+        for name, score in metrics.items():
+            f.write(f"- {name}, : {score} \n")
+
+# %%
+def showMetrics():
+    with open(RESULTS_PATH + "testing_results.txt") as f:
+        print(f.read())
+
+# %%
+test_metrics = testing_process(model, metrics, test_dataloader, device)
+
+# %% [markdown]
+# Save the testing results in a file
+
+# %%
+saveMetrics(test_metrics, "Testing results metrices")
+showMetrics()
+
+# %% [markdown]
+# # 19. Inference
+
+# %%
+def saveInference(string):
+    with open(RESULTS_PATH + "inference_results.txt", "w") as f:
+      f.write(string)
+
+# %%
+def classification(example_text, example_label, show = False, save= True): 
     #Using the HateBertDataLoader is a bit overkilled, we can just tokenize the input
     encoded_input = tokenizer(
         example_text,
@@ -512,15 +607,23 @@ def classification(example_text, example_label):
     
     # Use argmax to get the predicted class
     preds = torch.argmax(logits, dim=-1)
-    
-    print(f"Example sentence: {example_text}")
-    print(f" ---- Model classification: {id2label[int(preds)]}") 
-    print(f" ---- Real classification: {id2label[example_label]} \n")
+
+    res_str =  f"Example sentence: {example_text}\n ---- Model classification: {id2label[int(preds)]}\n ---- Real classification: {id2label[example_label]}\n"
+    if show: print(res_str)
+    if save: saveInference(res_str)
 
 # %%
-for n in range(0,-5,-1):
-    example_text = texts[n]
-    example_label = labels[n]
-    classification(example_text, example_label)
+#Write here an example sentence
+example_text = "I like train"
+#Determine the type of hate of your sentence 
+example_label = "not_hate" 
+classification(example_text, label2id[example_label], True)
+
+# %%
+#Write here an example sentence
+example_text = "White people should all die"
+#Determine the type of hate of your sentence 
+example_label = "implicit_hate" 
+classification(example_text, label2id[example_label], True)
 
 
