@@ -36,7 +36,7 @@ FIGURES_RESULTS_PATH = RESULTS_PATH + 'figures/'
 MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 2
+BATCH_SIZE = 16
 EPOCHS = 3
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
@@ -542,8 +542,6 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
 # %%
 def testing_process(model, metrics, test_dataloader, device):
-    metrics_names = list(metrics.keys())
-
     # Use tqdm for the evaluation dataloader
     num_testing_steps = len(test_dataloader)
     progress_bar = tqdm(range(num_testing_steps), desc="Testing Progress")
