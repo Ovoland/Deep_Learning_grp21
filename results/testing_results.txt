@@ -1,2 +1,3 @@
-test 
-- ACC, : 0.2 
+Testing results metrices 
+- ACC, : 0.7427839851024208 
+- F1-weighted, : 0.6262294885041854 
