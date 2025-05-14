@@ -1,0 +1,2 @@
+runai submit --image registry.rcp.epfl.ch/ee-559-voland/my-toolbox:v0.1 --pvc home:/pvc/home -e HOME=/pvc/home/voland --interactive -g 1 --command -- python3 /pvc/home/voland/mini_project/Deep_Learning_grp21/main.py
+#runai submit --image registry.rcp.epfl.ch/ee-559-voland/my-toolbox:v0.1 --pvc home:/pvc/home -e HOME=/home/voland --interactive -g 1 --command -- /bin/bash -ic "whoami && ls -lah /pvc/home/"
