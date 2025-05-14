@@ -24,6 +24,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score
 from IPython.display import clear_output
 from torch.optim import AdamW
+from datetime import datetime
 
 # %% [markdown]
 # ## 2. Configuration
@@ -37,7 +38,7 @@ MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
-EPOCHS = 3
+EPOCHS = 5
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
@@ -45,6 +46,10 @@ NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate ///
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# Create timestamp
+timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
 
 # Set seed for reproducibility
 random.seed(RANDOM_SEED)
@@ -84,7 +89,6 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
-#data = data.head(40)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
@@ -418,7 +422,7 @@ def plot_training(train_loss, val_loss, metrics_names, train_metrics_logs, test_
         ax[i + 1].legend()
 
     fig.suptitle("Training result of HateBert")
-    fig.savefig('results/figures/training_plot.png')
+    fig.savefig(FIGURES_RESULTS_PATH+ f'training_plot_{timestamp}.png')
     #plt.show()
     plt.close()
 
@@ -492,7 +496,7 @@ train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion
 # save model weights
 if not os.path.exists(MODELS_WEIGHTS_PATH):
     os.mkdir(MODELS_WEIGHTS_PATH)
-torch.save(model.state_dict(), MODELS_WEIGHTS_PATH + 'base_model.pth')
+torch.save(model.state_dict(), MODELS_WEIGHTS_PATH + f'base_model_{timestamp}.pth')
 
 # %% [markdown]
 # # 18. Testing 
@@ -554,14 +558,14 @@ def testing_process(model, metrics, test_dataloader, device):
 
 # %%
 def saveMetrics(metrics, title):
-    with open(RESULTS_PATH + "testing_results.txt", "w") as f:
+    with open(RESULTS_PATH + f"testing_results_{timestamp}.txt", "w") as f:
         f.write(f"{title} \n")
         for name, score in metrics.items():
             f.write(f"- {name}, : {score} \n")
 
 # %%
 def showMetrics():
-    with open(RESULTS_PATH + "testing_results.txt") as f:
+    with open(RESULTS_PATH + f"testing_results_{timestamp}.txt") as f:
         print(f.read())
 
 # %%
@@ -579,7 +583,7 @@ showMetrics()
 
 # %%
 def saveInference(string):
-    with open(RESULTS_PATH + "inference_results.txt", "w") as f:
+    with open(RESULTS_PATH + f"inference_results_{timestamp}.txt", "w") as f:
       f.write(string)
 
 # %%
