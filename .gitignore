@@ -19,3 +19,7 @@ data.zip
 
 runai_submit_jobs.sh
 
+#ignore model weights
+*.pth
+*.pt
+

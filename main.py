@@ -652,7 +652,7 @@ classification(example_text, label2id[example_label], True)
 #Write here an example sentence
 example_text = "White people should all die"
 #Determine the type of hate of your sentence 
-example_label = "explicite_hate" 
+example_label = "explicit_hate" 
 classification(example_text, label2id[example_label], True)
 
 
