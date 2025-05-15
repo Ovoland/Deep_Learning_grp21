@@ -21,7 +21,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score
 from IPython.display import clear_output
 from torch.optim import AdamW
 from datetime import datetime
@@ -38,10 +38,10 @@ MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
-EPOCHS = 5
+EPOCHS = 10
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
-RANDOM_SEED = 43
+RANDOM_SEED = 42
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
@@ -89,6 +89,7 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
+data = data.head(20)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
@@ -476,6 +477,12 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 # # 16 Evaluation metrics
 
 # %%
+def precision(preds, target):
+    return precision_score(target, preds, average='macro')
+
+def recall(preds, target):
+    return recall_score(target, preds,average='macro')
+
 def f1(preds, target):
     return f1_score(target, preds, average='macro')
 
@@ -486,7 +493,7 @@ def acc(preds, target):
 # # 17. Main
 
 # %%
-metrics = {'ACC': acc, 'F1-weighted': f1}
+metrics = {'P': precision, 'R': recall, 'ACC': acc, 'F1-weighted': f1}
 
 model.to(device)
 criterion.to(device)
