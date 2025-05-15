@@ -38,7 +38,7 @@ MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
-EPOCHS = 10
+EPOCHS = 5
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 42
@@ -89,7 +89,6 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
-data = data.head(20)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
