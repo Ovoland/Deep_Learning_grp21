@@ -12,6 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import os
 
 from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
@@ -33,15 +34,14 @@ from datetime import datetime
 MODEL_NAME = 'GroNLP/hateBERT'
 DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
 RESULTS_PATH = 'results/'
-FIGURES_RESULTS_PATH = RESULTS_PATH + 'figures/'
-MODELS_WEIGHTS_PATH = RESULTS_PATH + 'models_weights/'
+
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 16
-EPOCHS = 5
+BATCH_SIZE = 32
+EPOCHS = 10
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
-RANDOM_SEED = 42
+RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
@@ -50,6 +50,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create timestamp
 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
+RESULTS_FOLDER = RESULTS_PATH + f"results_{timestamp}/"
+METRICES_FOLDER = RESULTS_PATH + "metrices/"
 
 # Set seed for reproducibility
 random.seed(RANDOM_SEED)
@@ -57,6 +59,19 @@ np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
+
+# %%
+directory_name = RESULTS_FOLDER
+# Create the directory
+try:
+    os.mkdir(directory_name)
+    print(f"Directory '{directory_name}' created successfully.")
+except FileExistsError:
+    print(f"Directory '{directory_name}' already exists.")
+except PermissionError:
+    print(f"Permission denied: Unable to create '{directory_name}'.")
+except Exception as e:
+    print(f"An error occurred: {e}")
 
 # %% [markdown]
 # ## 3. Import Data 
@@ -80,7 +95,7 @@ for i, count in enumerate(class_counts):
     plt.text(i, count + max(class_counts)*0.01, str(count), ha='center', va='bottom', fontsize=10)
 
 plt.tight_layout()
-plt.savefig(FIGURES_RESULTS_PATH + "class_distribution.png")
+#plt.savefig(RESULTS_FOLDER + "class_distribution.png")
 #plt.show()
 plt.close()
 
@@ -89,6 +104,7 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
+data = data.head(20)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
@@ -422,7 +438,7 @@ def plot_training(train_loss, val_loss, metrics_names, train_metrics_logs, test_
         ax[i + 1].legend()
 
     fig.suptitle("Training result of HateBert")
-    fig.savefig(FIGURES_RESULTS_PATH+ f'training_plot_{timestamp}.png')
+    fig.savefig(RESULTS_FOLDER+ f'training_plot_{timestamp}.png')
     #plt.show()
     plt.close()
 
@@ -500,9 +516,9 @@ criterion.to(device)
 train_metrics_log, test_metrics_log = training_model(model, optimizer, criterion, metrics, train_dataloader, val_dataloader, n_epochs=EPOCHS, device=device)
 
 # save model weights
-if not os.path.exists(MODELS_WEIGHTS_PATH):
-    os.mkdir(MODELS_WEIGHTS_PATH)
-torch.save(model.state_dict(), MODELS_WEIGHTS_PATH + f'base_model_{timestamp}.pth')
+if not os.path.exists(RESULTS_FOLDER):
+    os.mkdir(RESULTS_FOLDER)
+torch.save(model.state_dict(), RESULTS_FOLDER + f'base_model_{timestamp}.pth')
 
 # %% [markdown]
 # # 18. Testing 
@@ -564,14 +580,19 @@ def testing_process(model, metrics, test_dataloader, device):
 
 # %%
 def saveMetrics(metrics, title):
-    with open(RESULTS_PATH + f"testing_results_{timestamp}.txt", "w") as f:
+    with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt", "w") as f:
+        f.write("Training configuration \n")
+        f.write(f"Batch size: {BATCH_SIZE} \n")
+        f.write(f"Epochs: {EPOCHS} \n")
+        f.write(f"Learning rate: {LEARNING_RATE} \n")
+        f.write(f"Seed {RANDOM_SEED} \n \n") 
         f.write(f"{title} \n")
         for name, score in metrics.items():
             f.write(f"- {name}, : {score} \n")
 
 # %%
 def showMetrics():
-    with open(RESULTS_PATH + f"testing_results_{timestamp}.txt") as f:
+    with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt") as f:
         print(f.read())
 
 # %%
@@ -589,7 +610,7 @@ showMetrics()
 
 # %%
 def saveInference(string):
-    with open(RESULTS_PATH + f"inference_results_{timestamp}.txt", "w") as f:
+    with open(RESULTS_FOLDER + f"inference_results_{timestamp}.txt", "w") as f:
       f.write(string)
 
 # %%
@@ -631,7 +652,7 @@ classification(example_text, label2id[example_label], True)
 #Write here an example sentence
 example_text = "White people should all die"
 #Determine the type of hate of your sentence 
-example_label = "implicit_hate" 
+example_label = "explicite_hate" 
 classification(example_text, label2id[example_label], True)
 
 
