@@ -1,0 +1,11 @@
+Training configuration 
+Batch size: 64 
+Epochs: 10 
+Learning rate: 2e-05 
+Seed 43 
+ 
+Testing results metrices 
+- P, : 0.5996426755078114 
+- R, : 0.6045967006285493 
+- ACC, : 0.7211359404096834 
+- F1-weighted, : 0.6019571948652859 
