@@ -1,0 +1,3 @@
+Example sentence: I like train
+ ---- Model classification: not_hate
+ ---- Real classification: not_hate
