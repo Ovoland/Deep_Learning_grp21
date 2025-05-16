@@ -37,7 +37,7 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 EPOCHS = 10
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
