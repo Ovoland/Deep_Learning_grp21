@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold, cross_val_score
 from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score
 from IPython.display import clear_output
 from torch.optim import AdamW
@@ -37,12 +37,13 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 64
-EPOCHS = 10
+BATCH_SIZE = 16
+EPOCHS = 25
 LEARNING_RATE = 2e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+K_FOLDS = 5 
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,7 +105,6 @@ plt.close()
 
 # %%
 #Can select only a subset of the data
-
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
@@ -200,13 +200,15 @@ class HateSpeechDataset(Dataset):
 
 # %%
 # Spliting data (60% train, 20% validation and 20% test)
-train_texts, test_texts, train_labels, test_labels = train_test_split(
+train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
     texts, labels, test_size=0.2, random_state=RANDOM_SEED
 )
+
 # splitting by 0.25 because: 0.25 x 0.8 = 0.2
 train_texts, val_texts, train_labels, val_labels = train_test_split(
-    train_texts, train_labels, test_size=0.25, random_state=RANDOM_SEED
+    train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
 )
+
 
 # TRAIN dataset
 train_dataset = HateSpeechDataset(
@@ -224,13 +226,7 @@ val_dataset = HateSpeechDataset(
     max_length=MAX_LENGTH
 )
 
-# TESTING dataset
-test_dataset = HateSpeechDataset(
-    texts=test_texts,
-    labels=test_labels,
-    tokenizer=tokenizer,
-    max_length=MAX_LENGTH
-)
+
 
 
 # DATALOADER for training set
@@ -604,6 +600,36 @@ test_metrics = testing_process(model, metrics, test_dataloader, device)
 # %%
 saveMetrics(test_metrics, "Testing results metrices")
 showMetrics()
+
+# %%
+def saveResults(metrices):
+    data = {
+    'Name': f"results_{timestamp}",
+    "Batch size": BATCH_SIZE,
+    "Epochs": EPOCHS,
+    "Learning rate": LEARNING_RATE,
+    "Seed": RANDOM_SEED
+    }
+
+    data.update(test_metrics)
+
+    # Open our existing CSV file in append mode
+    # Create a file object for this file
+    with open(RESULTS_PATH + 'results.csv', 'a') as f_object:
+    
+        # Pass this file object to csv.writer()
+        # and get a writer object
+        writer_object = writer(f_object)
+    
+        # Pass the list as an argument into
+        # the writerow()
+        writer_object.writerow(data.values())
+    
+        # Close the file object
+        f_object.close()
+
+# %%
+saveResults(test_metrics)
 
 # %% [markdown]
 # # 19. Inference
