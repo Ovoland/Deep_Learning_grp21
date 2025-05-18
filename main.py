@@ -227,6 +227,13 @@ val_dataset = HateSpeechDataset(
 )
 
 
+# TEST dataset
+test_dataset = HateSpeechDataset(
+    texts=test_texts,
+    labels=test_labels,
+    tokenizer=tokenizer,
+    max_length=MAX_LENGTH
+)
 
 
 # DATALOADER for training set
