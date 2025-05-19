@@ -1,0 +1,16 @@
+Training Configuration:
+Model Name: GroNLP/hateBERT
+Timestamp: 2025-05-19_10-00
+Max Epochs Configured: 20
+Patience for Early Stop (from config): 8
+Learning Rate: 1e-05
+Batch Size: 16
+Weight Decay: 0.01
+BERT Body Frozen: False
+Random Seed: 43
+
+Final Hold-out Test Set Metrics
+- P: 0.5644
+- R: 0.6371
+- ACC: 0.6888
+- F1-macro: 0.5844
