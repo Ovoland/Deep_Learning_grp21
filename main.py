@@ -38,8 +38,8 @@ RESULTS_PATH = 'results/'
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
-EPOCHS = 25
-LEARNING_RATE = 2e-5
+EPOCHS = 5
+LEARNING_RATE = 1e-5
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
@@ -263,7 +263,7 @@ test_dataloader = DataLoader(
 # We use the default training configuration from the kaggle page
 
 # %%
-optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=0.01)
 
 # Class distribution from your dataset
 class_counts = class_counts
