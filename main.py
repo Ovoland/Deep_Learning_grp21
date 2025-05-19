@@ -92,7 +92,6 @@ print(data)
 
 # %%
 #Can select only a subset of the data
-data = data.head(50)
 
 # Label mappings
 id2label = {0: "not_hate", 1: "implicit_hate"}#, 2: "explicit_hate"}
@@ -621,7 +620,7 @@ def saveMetrics(metrics, metrics_report):
         f.write(f"Epochs: {EPOCHS} \n")
         f.write(f"Learning rate: {LEARNING_RATE} \n")
         f.write(f"Seed {RANDOM_SEED} \n" ) 
-        f.write("Decay {WEIGHT_DECAY} \n \n")
+        f.write(f"Decay {WEIGHT_DECAY} \n \n")
         
         f.write("Testing results metrices \n \n")
 
