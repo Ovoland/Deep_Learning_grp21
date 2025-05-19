@@ -34,7 +34,9 @@ from csv import writer
 
 # %%
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/EXPANDED_TOTAL_SET_BY_CHATGPT.tsv' 
+#DATA_PATH = 'data/implicit-hate-corpus/EXPANDED_TOTAL_SET_BY_CHATGPT.tsv' 
+TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/TRAINING_VALIDATION_SET.tsv'
+TESTING_DATA_PATH = 'data/implicit-hate-corpus/TESTING_SET.tsv' 
 RESULTS_PATH = 'results/'
 
 
@@ -53,7 +55,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create timestamp
 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-RESULTS_FOLDER = RESULTS_PATH + f"results_{timestamp}/"
+RESULTS_FOLDER = RESULTS_PATH + f"new_results_{timestamp}/"
 METRICES_FOLDER = RESULTS_PATH + "metrices/"
 
 # Set seed for reproducibility
@@ -80,14 +82,18 @@ except Exception as e:
 # ## 3. Import Data 
 
 # %%
-data = pd.read_csv(DATA_PATH, sep = '\t')
-print(data)
+#data = pd.read_csv(DATA_PATH, sep = '\t')
+# print(data)
+train_valid_data = pd.read_csv(TRAINING_VALIDATION_DATA_PATH, sep = '\t')
+testing_data = pd.read_csv(TESTING_DATA_PATH, sep = '\t')
+
 
 # %% [markdown]
 # ## 4. Data Set  Distribution 
 
 # %%
-class_counts = data['class'].value_counts()
+# class_counts = data['class'].value_counts()
+class_counts = train_valid_data['class'].value_counts()
 
 # Plot
 ax = class_counts.plot(kind='bar', title='Class Distribution')
@@ -115,15 +121,28 @@ label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
 
 # Load data text
 texts = data['post'].values
+train_valid_texts = train_valid_data['post'].values
+test_texts = testing_data['post'].values
 
 # Print raw numeric labels
-print("Labels before mapping: \n", data['class'].values[:11])
+# print("Labels before mapping: \n", data['class'].values[:11])
+print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
+print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
 
 # Map labels to numeric values
-data['class'] = data['class'].map(label2id)
-labels = data['class'].values
+# data['class'] = data['class'].map(label2id)
+# labels = data['class'].values
+
+train_valid_data['class'] = train_valid_data['class'].map(label2id)
+labels_train_valid = train_valid_data['class'].values
+
+testing_data['class'] = testing_data['class'].map(label2id)
+labels_testing = testing_data['class'].values
+
 # Print string labels
-print("Labels after mapping:  ", labels[:11])
+# print("Labels after mapping:  ", labels[:11])
+print("Labels after mapping:  ", labels_train_valid[:11])
+print("Labels after mapping:  ", labels_testing[:11])
 
 
 # %% [markdown]
@@ -194,7 +213,7 @@ class HateSpeechDataset(Dataset):
 
 # %% [markdown]
 # To train our model, we will split the data in 3 categories as it is usually recommanded:
-# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this 
 # - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
 # - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
 # 
@@ -202,15 +221,20 @@ class HateSpeechDataset(Dataset):
 
 # %%
 # Spliting data (60% train, 20% validation and 20% test)
-train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
-    texts, labels, test_size=0.2, random_state=RANDOM_SEED
-)
+# train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+#     texts, labels, test_size=0.2, random_state=RANDOM_SEED
+# )
+
 
 # splitting by 0.25 because: 0.25 x 0.8 = 0.2
-train_texts, val_texts, train_labels, val_labels = train_test_split(
-    train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
-)
+# train_texts, val_texts, train_labels, val_labels = train_test_split(
+#     train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+# )
+test_texts, test_labels = test_texts, labels_testing
 
+train_texts, val_texts, train_labels, val_labels = train_test_split(
+    train_valid_texts, labels_train_valid, test_size=0.25, random_state=RANDOM_SEED
+)
 
 # TRAIN dataset
 train_dataset = HateSpeechDataset(
