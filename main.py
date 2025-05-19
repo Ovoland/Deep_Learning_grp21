@@ -34,14 +34,15 @@ from csv import writer
 
 # %%
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+DATA_PATH = 'data/implicit-hate-corpus/EXPANDED_TOTAL_SET_BY_CHATGPT.tsv' 
 RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 EPOCHS = 10
-LEARNING_RATE = 3e-5
+LEARNING_RATE = 5e-6
+WEIGHT_DECAY = 0.05
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
@@ -264,7 +265,7 @@ test_dataloader = DataLoader(
 # We use the default training configuration from the kaggle page
 
 # %%
-optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=0.01)
+optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 # Class distribution from your dataset
 class_counts = class_counts
