@@ -1,7 +1,7 @@
 Training configuration 
 Batch size: 32 
 Epochs: 10 
-Learning rate: 3e-05 
+Learning rate: 4e-05 
 Seed 43 
 Decay 0.05
 

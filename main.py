@@ -41,10 +41,11 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 32
+BATCH_SIZE = 8
 EPOCHS = 10
 LEARNING_RATE = 3e-5
 WEIGHT_DECAY = 0.05
+DROPOUT = 0.3
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
@@ -147,7 +148,9 @@ model = AutoModelForSequenceClassification.from_pretrained(
     id2label=id2label, 
     label2id=label2id,
     output_attentions=False,
-    output_hidden_states=False
+    output_hidden_states=False,
+    hidden_dropout_prob=DROPOUT,  # Increase dropout probability
+    attention_probs_dropout_prob=DROPOUT  # Increase attention dropout
 )
 
 print(model.num_parameters())
@@ -620,7 +623,8 @@ def saveMetrics(metrics, metrics_report):
         f.write(f"Epochs: {EPOCHS} \n")
         f.write(f"Learning rate: {LEARNING_RATE} \n")
         f.write(f"Seed {RANDOM_SEED} \n" ) 
-        f.write(f"Decay {WEIGHT_DECAY} \n \n")
+        f.write(f"Decay {WEIGHT_DECAY} \n")
+        f.write(f"Dropout: {DROPOUT} \n  \n")
         
         f.write("Testing results metrices \n \n")
 
@@ -659,6 +663,7 @@ def saveResults(metrices):
     "Learning rate": LEARNING_RATE,
     "Seed": RANDOM_SEED,
     "Decay": WEIGHT_DECAY,
+    "Dropout": DROPOUT,
     }
 
     data.update(test_metrics)
