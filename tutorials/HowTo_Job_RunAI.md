@@ -20,6 +20,11 @@ Version de Thomas pour utiliser le meilleur gpu performance et perdre moins de t
 ```bash
 runai submit --image registry.rcp.epfl.ch/ee-559-serillon/new_toolbox:v0.1 --gpu 1 --node-pool a100-40g --pvc course-ee-559-scratch:/scratch --pvc home:/pvc/home --interactive --attach
 ```
+
+```bash
+runai submit --image registry.rcp.epfl.ch/ee-559-serillon/new_toolbox:v0.1 --gpu 1 --node-pool h100 --pvc course-ee-559-scratch:/scratch --pvc home:/pvc/home --interactive --attach
+```
+
 Une fois ouvert, cet environement est un bash shell classique mais qui est directement sur le RunAI. IL NE LANCE PAS le "main.py" c'est normal. Avant de faire ça, vérifiez que le module "transformers" a bel et bien été importé en ouvrant une shell python:
 ```bash
 python

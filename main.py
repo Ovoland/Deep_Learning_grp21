@@ -645,12 +645,38 @@ saveResults(test_metrics)
 
 # %%
 def saveInference(string):
-    with open(RESULTS_FOLDER + f"inference_results_{timestamp}.txt", "w") as f:
-      f.write(string)
+    with open(RESULTS_FOLDER + f"inference_results_{timestamp}.txt", "a", encoding="utf-8") as f:
+        f.write(string + "\n")
 
 # %%
-def classification(example_text, example_label, show = False, save= True): 
-    #Using the HateBertDataLoader is a bit overkilled, we can just tokenize the input
+def classification(example_text, example_label, show=False, save=True):
+    """
+    Parameters:
+    example_text  : str | Iterable[str]
+    example_label : int | str | Iterable[int|str]
+        - Accepts ids or label names; mixed types are fine.
+    show          : bool   – print each result to stdout
+    save          : bool   – append all results to the timestamped file
+
+    Returns:
+    List[int]     – model-predicted label ids (same order as input)
+    """
+    # normalize and wrap
+    if isinstance(example_text, str):
+        example_text = [example_text]
+    if isinstance(example_label, (str, int)):
+        example_label = [example_label]
+
+    if len(example_text) != len(example_label):
+        raise ValueError("Lengths of example_text and example_label must match.")
+
+    # Convert any label names to ids
+    lbl_ids = [
+        label2id[lab] if isinstance(lab, str) else int(lab)
+        for lab in example_label
+    ]
+
+    # tokenise the full batch
     encoded_input = tokenizer(
         example_text,
         add_special_tokens=True,
@@ -659,35 +685,47 @@ def classification(example_text, example_label, show = False, save= True):
         truncation=True,
         return_tensors='pt'
     ).to(device)
-    
+
+    # forward pass
     model.eval()
-    
     with torch.no_grad():
-        # Forward pass, get the outputs from the model
-        outputs = model(**encoded_input)
-        
-        # Get the logits from the outputs
-        logits = outputs.logits
-    
-    # Use argmax to get the predicted class
-    preds = torch.argmax(logits, dim=-1)
+        logits = model(**encoded_input).logits
+    preds = torch.argmax(logits, dim=-1).cpu().tolist()
 
-    res_str =  f"Example sentence: {example_text}\n ---- Model classification: {id2label[int(preds)]}\n ---- Real classification: {id2label[example_label]}\n"
-    if show: print(res_str)
-    if save: saveInference(res_str)
+    #build per example results
+    results = []
+    for txt, true_id, pred_id in zip(example_text, lbl_ids, preds):
+        res = (
+            f"Example sentence: {txt}\n"
+            f" ---- Model classification: {id2label[pred_id]}\n"
+            f" ---- Real classification:  {id2label[true_id]}\n"
+        )
+        results.append(res)
+        if show:
+            print(res)
+
+    # persist + run
+    if save:
+        saveInference("\n".join(results))
+
+    return preds
 
 # %%
-#Write here an example sentence
-example_text = "I like train"
-#Determine the type of hate of your sentence 
-example_label = "not_hate" 
-classification(example_text, label2id[example_label], True)
+sentences = [
+    "I like trains",
+    "White people should all die",
+    "I love white snow. I would hate black snow though.",
+    "Is it me or there are too many gays in the world?",
+    "I love the new movie with the black guy."
+]
+true_labels = [
+    label2id["not_hate"],
+    label2id["explicit_hate"],
+    label2id["not_hate"],
+    label2id["implicit_hate"],
+    label2id["not_hate"]
+]
 
-# %%
-#Write here an example sentence
-example_text = "White people should all die"
-#Determine the type of hate of your sentence 
-example_label = "explicit_hate" 
-classification(example_text, label2id[example_label], True)
+predictions = classification(sentences, true_labels, show=True)
 
 
