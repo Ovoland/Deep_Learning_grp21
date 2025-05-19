@@ -1,7 +1,8 @@
 # %% [markdown]
-# # Détection de Discours Haineux Implicite avec HateBERT
+#  # Implicit and explicit hateful speech detection by HateBert
 # 
-# ## 1. Imports et Configuration Initiale
+# 
+#  ## 1. Import and initial configuration
 
 # %%
 import getpass
@@ -22,30 +23,31 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
-from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score
+from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score,classification_report
 from IPython.display import clear_output
 from torch.optim import AdamW
 from datetime import datetime
 from csv import writer
 
 
+
 # %% [markdown]
-# ## 2. Configuration
+#  ## 2. Configuration
 
 # %%
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/EXPANDED_TOTAL_SET_BY_CHATGPT.tsv' 
+DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
 RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 32
 EPOCHS = 10
-LEARNING_RATE = 3e-6
+LEARNING_RATE = 3e-5
 WEIGHT_DECAY = 0.05
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
-NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,6 +65,7 @@ torch.manual_seed(RANDOM_SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
+
 # %%
 directory_name = RESULTS_FOLDER
 # Create the directory
@@ -76,15 +79,43 @@ except PermissionError:
 except Exception as e:
     print(f"An error occurred: {e}")
 
+
 # %% [markdown]
-# ## 3. Import Data 
+#  ## 3. Import Data
 
 # %%
 data = pd.read_csv(DATA_PATH, sep = '\t')
 print(data)
 
 # %% [markdown]
-# ## 4. Data Set  Distribution 
+#  ## 4. Data preparation (labels and text extraction and remaping)
+
+# %%
+#Can select only a subset of the data
+data = data.head(50)
+
+# Label mappings
+id2label = {0: "not_hate", 1: "implicit_hate"}#, 2: "explicit_hate"}
+label2id = {"not_hate": 0, "implicit_hate": 1}#, "explicit_hate": 2}
+
+#Remove the explicit hate speech to do binary classification
+data = data[data["class"] != "explicit_hate"]
+
+# Map labels to numeric values
+data['class'] = data['class'].map(label2id)
+
+# Print raw numeric labels
+print("Labels before mapping: \n", data['class'].values[:11])
+
+# Load data text
+texts = data['post'].values
+
+labels = data['class'].values
+# Print string labels
+print("Labels after mapping:  ", labels[:11])
+
+# %% [markdown]
+#  ## 5. Data Set  Distribution
 
 # %%
 class_counts = data['class'].value_counts()
@@ -102,34 +133,13 @@ plt.tight_layout()
 #plt.show()
 plt.close()
 
-# %% [markdown]
-# ## 5. Data preparation (labels and text extraction and remaping)
-
-# %%
-#Can select only a subset of the data
-
-# Label mappings
-id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
-label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
-
-
-# Load data text
-texts = data['post'].values
-
-# Print raw numeric labels
-print("Labels before mapping: \n", data['class'].values[:11])
-
-# Map labels to numeric values
-data['class'] = data['class'].map(label2id)
-labels = data['class'].values
-# Print string labels
-print("Labels after mapping:  ", labels[:11])
-
 
 # %% [markdown]
-# # 6. Load Hate Bert model
+#  # 6. Load Hate Bert model
 # 
-# We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
+# 
+# 
+#  We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
 
 # %%
 model = AutoModelForSequenceClassification.from_pretrained(
@@ -143,16 +153,19 @@ model = AutoModelForSequenceClassification.from_pretrained(
 
 print(model.num_parameters())
 
+
 # %% [markdown]
-# # 7. Load Tokenizer
+#  # 7. Load Tokenizer
 # 
-# From hugging face plateforme, we can also load the tokenizer specially made for Hate Bert
+# 
+# 
+#  From hugging face plateforme, we can also load the tokenizer specially made for Hate Bert
 
 # %%
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 # %% [markdown]
-# # 8. Dataset Initialization
+#  # 8. Dataset Initialization
 
 # %%
 class HateSpeechDataset(Dataset):
@@ -184,21 +197,24 @@ class HateSpeechDataset(Dataset):
                 'input_ids': encoding['input_ids'].flatten(),
                 'attention_mask': encoding['attention_mask'].flatten(),
                 'labels': torch.tensor(label, dtype=torch.long)
-            }
-    
-        
-           
+            }   
+
 
 # %% [markdown]
-# # 9. Dataset and DataLoader Splitting
+#  # 9. Dataset and DataLoader Splitting
 
 # %% [markdown]
-# To train our model, we will split the data in 3 categories as it is usually recommanded:
-# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
-# - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
-# - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
+#  To train our model, we will split the data in 3 categories as it is usually recommanded:
 # 
-# [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
+#  - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# 
+#  - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters.
+# 
+#  - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
+# 
+# 
+# 
+#  [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
 
 # %%
 # Spliting data (60% train, 20% validation and 20% test)
@@ -259,10 +275,13 @@ test_dataloader = DataLoader(
     shuffle=False
 )
 
+
 # %% [markdown]
-# # 10. Training Configuration
+#  # 10. Training Configuration
 # 
-# We use the default training configuration from the kaggle page
+# 
+# 
+#  We use the default training configuration from the kaggle page
 
 # %%
 optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
@@ -280,8 +299,9 @@ criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
 model.to(device)
 
+
 # %% [markdown]
-# # 11. Scheduler 
+#  # 11. Scheduler
 
 # %%
 num_training_steps = EPOCHS * len(train_dataloader)
@@ -290,8 +310,9 @@ lr_scheduler = get_scheduler(
     name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
 )
 
+
 # %% [markdown]
-# # 12. Training 
+#  # 12. Training
 
 # %%
 def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, epoch, progress_bar):
@@ -351,7 +372,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         epoch_loss += loss.item()
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-
+    
     
     # Average the loss over all batches
     epoch_loss /= len(train_dataloader)
@@ -363,8 +384,9 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
 
     return epoch_loss, epoch_metrics
 
+
 # %% [markdown]
-# # 13. Validation
+#  # 13. Validation
 
 # %%
 def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
@@ -422,8 +444,9 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
 
     return epoch_loss, epoch_metrics
 
+
 # %% [markdown]
-# # 14. Plotting the training and testing
+#  # 14. Plotting the training and testing
 
 # %%
 def plot_training(train_loss, val_loss, metrics_names, train_metrics_logs, test_metrics_logs, savePicture = True):
@@ -458,8 +481,9 @@ def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
         metrics_log[i].append(new_metrics_dict[curr_metric_name])
     return metrics_log
 
+
 # %% [markdown]
-# # 15. Iterative training and validating
+#  # 15. Iterative training and validating
 
 # %%
 def training_model(model, optimizer, criterion, metrics, train_loader, val_loader, n_epochs, device):
@@ -493,8 +517,9 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
     return train_metrics_log, val_metrics_log
 
 
+
 # %% [markdown]
-# # 16 Evaluation metrics
+#  # 16 Evaluation metrics
 
 # %%
 def precision(preds, target):
@@ -509,8 +534,9 @@ def f1(preds, target):
 def acc(preds, target):
     return accuracy_score(target, preds)
 
+
 # %% [markdown]
-# # 17. Main
+#  # 17. Main
 
 # %%
 metrics = {'P': precision, 'R': recall, 'ACC': acc, 'F1-weighted': f1}
@@ -525,8 +551,9 @@ if not os.path.exists(RESULTS_FOLDER):
     os.mkdir(RESULTS_FOLDER)
 torch.save(model.state_dict(), RESULTS_FOLDER + f'base_model_{timestamp}.pth')
 
+
 # %% [markdown]
-# # 18. Testing 
+#  # 18. Testing
 
 # %%
 def testing(model, metrics, test_dataloader, device, progress_bar):
@@ -537,7 +564,7 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
     all_predictions = []
     all_labels = []
 
-    epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
+    test_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
 
     # Use tqdm for the evaluation dataloader
     eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
@@ -567,9 +594,11 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
         progress_bar.update(1)
 
     # Compute metrics on the entire dataset
-    epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+    test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate"])
         
-    return epoch_metrics
+    return test_metrics, metrics_report
+
 
 # %%
 def testing_process(model, metrics, test_dataloader, device):
@@ -577,37 +606,49 @@ def testing_process(model, metrics, test_dataloader, device):
     num_testing_steps = len(test_dataloader)
     progress_bar = tqdm(range(num_testing_steps), desc="Testing Progress")
 
-    test_metrics = testing(model, metrics, test_dataloader, device, progress_bar)
+    test_metrics, metrics_report = testing(model, metrics, test_dataloader, device, progress_bar)
     
     progress_bar.close()
     print("Training completed.")
-    return test_metrics
+    return test_metrics, metrics_report
+
 
 # %%
-def saveMetrics(metrics, title):
+def saveMetrics(metrics, metrics_report):
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt", "w") as f:
         f.write("Training configuration \n")
         f.write(f"Batch size: {BATCH_SIZE} \n")
         f.write(f"Epochs: {EPOCHS} \n")
         f.write(f"Learning rate: {LEARNING_RATE} \n")
-        f.write(f"Seed {RANDOM_SEED} \n \n") 
-        f.write(f"{title} \n")
+        f.write(f"Seed {RANDOM_SEED} \n" ) 
+        f.write("Decay {WEIGHT_DECAY} \n \n")
+        
+        f.write("Testing results metrices \n \n")
+
         for name, score in metrics.items():
             f.write(f"- {name}, : {score} \n")
+
+        f.write("\n Testing results report \n \n")
+        f.write(metrics_report)
+
 
 # %%
 def showMetrics():
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt") as f:
         print(f.read())
 
+
 # %%
-test_metrics = testing_process(model, metrics, test_dataloader, device)
+test_metrics, metrics_report = testing_process(model, metrics, test_dataloader, device)
 
 # %% [markdown]
-# Save the testing results in a file
+#  Save the testing results in a file
 
 # %%
-saveMetrics(test_metrics, "Testing results metrices")
+print(metrics_report)
+
+# %%
+saveMetrics(test_metrics, metrics_report)
 showMetrics()
 
 # %%
@@ -617,7 +658,8 @@ def saveResults(metrices):
     "Batch size": BATCH_SIZE,
     "Epochs": EPOCHS,
     "Learning rate": LEARNING_RATE,
-    "Seed": RANDOM_SEED
+    "Seed": RANDOM_SEED,
+    "Decay": WEIGHT_DECAY,
     }
 
     data.update(test_metrics)
@@ -637,16 +679,18 @@ def saveResults(metrices):
         # Close the file object
         f_object.close()
 
+
 # %%
 saveResults(test_metrics)
 
 # %% [markdown]
-# # 19. Inference
+#  # 19. Inference
 
 # %%
 def saveInference(string):
     with open(RESULTS_FOLDER + f"inference_results_{timestamp}.txt", "a", encoding="utf-8") as f:
         f.write(string + "\n")
+
 
 # %%
 def classification(example_text, example_label, show=False, save=True):
@@ -710,22 +754,26 @@ def classification(example_text, example_label, show=False, save=True):
 
     return preds
 
+
 # %%
 sentences = [
     "I like trains",
-    "White people should all die",
+    #"White people should all die",
     "I love white snow. I would hate black snow though.",
     "Is it me or there are too many gays in the world?",
     "I love the new movie with the black guy."
 ]
 true_labels = [
     label2id["not_hate"],
-    label2id["explicit_hate"],
+    #label2id["explicit_hate"],
     label2id["not_hate"],
     label2id["implicit_hate"],
     label2id["not_hate"]
 ]
 
 predictions = classification(sentences, true_labels, show=True)
+
+
+
 
 
