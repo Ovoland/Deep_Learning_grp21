@@ -120,7 +120,7 @@ label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
 
 
 # Load data text
-texts = data['post'].values
+# texts = data['post'].values
 train_valid_texts = train_valid_data['post'].values
 test_texts = testing_data['post'].values
 
