@@ -26,6 +26,8 @@ from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_sc
 from IPython.display import clear_output
 from torch.optim import AdamW
 from datetime import datetime
+from csv import writer
+
 
 # %% [markdown]
 # ## 2. Configuration
