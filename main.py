@@ -18,7 +18,8 @@ import os
 from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data import DataLoader, TensorDataset
+from torch.nn.utils import clip_grad_norm_
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
@@ -28,6 +29,7 @@ from IPython.display import clear_output
 from torch.optim import AdamW
 from datetime import datetime
 from csv import writer
+
 
 
 
@@ -41,11 +43,12 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 EPOCHS = 10
 LEARNING_RATE = 3e-5
 WEIGHT_DECAY = 0.05
 DROPOUT = 0.3
+PATIENCE = 3
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
@@ -286,6 +289,8 @@ test_dataloader = DataLoader(
 #  We use the default training configuration from the kaggle page
 
 # %%
+
+
 optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 # Class distribution from your dataset
@@ -301,15 +306,16 @@ criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 
 model.to(device)
 
-
 # %% [markdown]
 #  # 11. Scheduler
 
 # %%
-num_training_steps = EPOCHS * len(train_dataloader)
-# feel free to experiment with different num_warmup_steps
-lr_scheduler = get_scheduler(
-    name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+
+lr_scheduler = CosineAnnealingWarmRestarts(
+    optimizer,
+    T_0=5,          # Initial restart interval (in epochs)
+    T_mult=2,       # Multiply factor for increasing T_0 after restart
+    eta_min=1e-6    # Minimum learning rate
 )
 
 
@@ -349,6 +355,10 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
 
         # Backward pass
         loss.backward()
+
+        # Gradient clipping
+        clip_grad_norm_(model.parameters(), max_norm=1)
+
 
         # Perform one step of the optimizer
         optimizer.step()
@@ -496,6 +506,12 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
     num_training_steps = n_epochs * len(train_dataloader)
 
+    #Early stopping
+    best_val_loss = float('inf')
+    patience = PATIENCE
+    patience_counter = 0
+    best_model_state = None
+
     progress_bar = tqdm(range(num_training_steps), desc="Training Progress")
 
     print(f"Starting training for {EPOCHS} epochs...") # Use EPOCHS from config
@@ -514,6 +530,18 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
         plot_training(train_loss_log, test_loss_log, metrics_names, train_metrics_log, val_metrics_log)
 
+        if test_loss < best_val_loss:
+            best_val_loss = test_loss
+            patience_counter = 0
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch + 1}")
+                break
+
+    if best_model_state:
+        model.load_state_dict(best_model_state)
     progress_bar.close()
     print("Training completed.")
     return train_metrics_log, val_metrics_log

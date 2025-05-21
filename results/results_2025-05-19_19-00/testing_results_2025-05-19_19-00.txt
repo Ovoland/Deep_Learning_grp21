@@ -1,0 +1,27 @@
+Training configuration 
+Batch size: 16 
+Epochs: 7 
+Learning rate: 1e-05 
+Seed 43 
+Decay 0.05 
+Dropout: 0.3 
+  
+Note: Change linear scheduler to cosinus
+
+Testing results metrices 
+ 
+- P, : 0.7237846729407311 
+- R, : 0.7442085264089289 
+- ACC, : 0.736209855356705 
+- F1-weighted, : 0.7252970344374183 
+
+ Testing results report 
+ 
+               precision    recall  f1-score   support
+
+     not_hate      0.718     0.854     0.780      2234
+implicit_hate      0.771     0.593     0.671      1845
+
+     accuracy                          0.736      4079
+    macro avg      0.744     0.724     0.725      4079
+ weighted avg      0.742     0.736     0.731      4079
