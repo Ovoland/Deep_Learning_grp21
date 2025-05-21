@@ -1,7 +1,7 @@
 # %% [markdown]
-# # Détection de Discours Haineux Implicite avec HateBERT
+# # Implicit and explicit hateful speech detection by HateBert
 # 
-# ## 1. Imports et Configuration Initiale
+# ## 1. Import and initial configuration
 
 # %%
 import getpass
@@ -18,31 +18,33 @@ from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import DataLoader, TensorDataset
+from torch.nn.utils import clip_grad_norm_
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
-from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score
+from sklearn.metrics import f1_score, accuracy_score, recall_score, precision_score,classification_report
 from IPython.display import clear_output
 from torch.optim import AdamW
 from datetime import datetime
 from csv import writer
-
 
 # %% [markdown]
 # ## 2. Configuration
 
 # %%
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/EXPANDED_TOTAL_SET_BY_CHATGPT.tsv' 
+DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
 RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 32
-EPOCHS = 10
-LEARNING_RATE = 3e-6
+BATCH_SIZE = 16
+EPOCHS = 5
+LEARNING_RATE = 2e-5
 WEIGHT_DECAY = 0.05
+DROPOUT = 0.3
+PATIENCE = 3
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 43
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
@@ -138,7 +140,9 @@ model = AutoModelForSequenceClassification.from_pretrained(
     id2label=id2label, 
     label2id=label2id,
     output_attentions=False,
-    output_hidden_states=False
+    output_hidden_states=False,
+    hidden_dropout_prob=DROPOUT,  # Increase dropout probability
+    attention_probs_dropout_prob=DROPOUT  # Increase attention dropout
 )
 
 print(model.num_parameters())
@@ -327,6 +331,9 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         # Backward pass
         loss.backward()
 
+        # Gradient clipping
+        clip_grad_norm_(model.parameters(), max_norm=1)
+
         # Perform one step of the optimizer
         optimizer.step()
 
@@ -351,7 +358,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         epoch_loss += loss.item()
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-
+    
     
     # Average the loss over all batches
     epoch_loss /= len(train_dataloader)
@@ -362,6 +369,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
           ', '.join(['{}: {:.4f}'.format(k, v) for k, v in epoch_metrics.items()]))
 
     return epoch_loss, epoch_metrics
+
 
 # %% [markdown]
 # # 13. Validation
@@ -566,10 +574,11 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
         progress_bar.update(1)
 
-    # Compute metrics on the entire dataset
-    epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+     # Compute metrics on the entire dataset
+    test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"])
         
-    return epoch_metrics
+    return test_metrics, metrics_report
 
 # %%
 def testing_process(model, metrics, test_dataloader, device):
@@ -577,23 +586,31 @@ def testing_process(model, metrics, test_dataloader, device):
     num_testing_steps = len(test_dataloader)
     progress_bar = tqdm(range(num_testing_steps), desc="Testing Progress")
 
-    test_metrics = testing(model, metrics, test_dataloader, device, progress_bar)
+    test_metrics, metrics_report = testing(model, metrics, test_dataloader, device, progress_bar)
     
     progress_bar.close()
     print("Training completed.")
-    return test_metrics
+    return test_metrics, metrics_report
 
 # %%
-def saveMetrics(metrics, title):
+# %%
+def saveMetrics(metrics, metrics_report):
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt", "w") as f:
         f.write("Training configuration \n")
         f.write(f"Batch size: {BATCH_SIZE} \n")
         f.write(f"Epochs: {EPOCHS} \n")
         f.write(f"Learning rate: {LEARNING_RATE} \n")
-        f.write(f"Seed {RANDOM_SEED} \n \n") 
-        f.write(f"{title} \n")
+        f.write(f"Seed {RANDOM_SEED} \n" ) 
+        f.write(f"Decay {WEIGHT_DECAY} \n")
+        f.write(f"Dropout: {DROPOUT} \n  \n")
+        
+        f.write("Testing results metrices \n \n")
+
         for name, score in metrics.items():
             f.write(f"- {name}, : {score} \n")
+
+        f.write("\n Testing results report \n \n")
+        f.write(metrics_report)
 
 # %%
 def showMetrics():
@@ -601,7 +618,7 @@ def showMetrics():
         print(f.read())
 
 # %%
-test_metrics = testing_process(model, metrics, test_dataloader, device)
+test_metrics, metrics_report = testing_process(model, metrics, test_dataloader, device)
 
 # %% [markdown]
 # Save the testing results in a file
@@ -617,7 +634,9 @@ def saveResults(metrices):
     "Batch size": BATCH_SIZE,
     "Epochs": EPOCHS,
     "Learning rate": LEARNING_RATE,
-    "Seed": RANDOM_SEED
+    "Seed": RANDOM_SEED,
+    "Decay": WEIGHT_DECAY,
+    "Dropout": DROPOUT,
     }
 
     data.update(test_metrics)
@@ -710,22 +729,24 @@ def classification(example_text, example_label, show=False, save=True):
 
     return preds
 
+
 # %%
 sentences = [
     "I like trains",
-    "White people should all die",
+    #"White people should all die",
     "I love white snow. I would hate black snow though.",
     "Is it me or there are too many gays in the world?",
     "I love the new movie with the black guy."
 ]
 true_labels = [
     label2id["not_hate"],
-    label2id["explicit_hate"],
+    #label2id["explicit_hate"],
     label2id["not_hate"],
     label2id["implicit_hate"],
     label2id["not_hate"]
 ]
 
+# %%
 predictions = classification(sentences, true_labels, show=True)
 
 
