@@ -34,7 +34,7 @@ from csv import writer
 # ## 2. Configuration
 
 # %%
-SEPERATED_DATASET = False # if True, the dataset is separated in training and testing sets
+SEPERATED_DATASET = True # if True, the dataset is separated in training and testing sets
 
 MODEL_NAME = 'GroNLP/hateBERT'
 if SEPERATED_DATASET:
