@@ -1,8 +1,7 @@
 # %% [markdown]
-#  # Implicit and explicit hateful speech detection by HateBert
+# # Implicit and explicit hateful speech detection by HateBert
 # 
-# 
-#  ## 1. Import and initial configuration
+# ## 1. Import and initial configuration
 
 # %%
 import getpass
@@ -18,8 +17,9 @@ import os
 from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils import clip_grad_norm_
+from torch.utils.data import DataLoader, TensorDataset
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from torch.nn.utils import clip_grad_norm_
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
 from transformers import get_scheduler
@@ -30,15 +30,19 @@ from torch.optim import AdamW
 from datetime import datetime
 from csv import writer
 
-
-
-
 # %% [markdown]
 #  ## 2. Configuration
 
 # %%
+SEPERATED_DATASET = False # if True, the dataset is separated in training and testing sets
+
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+if SEPERATED_DATASET:
+    TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TRAINING_VALIDATION_SET2.tsv'    # 'data/implicit-hate-corpus/TRAINING_VALIDATION_SET.tsv'
+    TESTING_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TESTING_SET2.tsv'                            # 'data/implicit-hate-corpus/TESTING_SET.tsv' 
+else:
+    DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+    
 RESULTS_PATH = 'results/'
 
 
@@ -48,10 +52,10 @@ EPOCHS = 10
 LEARNING_RATE = 3e-5
 WEIGHT_DECAY = 0.05
 DROPOUT = 0.3
-PATIENCE = 3
+PATIENCE = 8
 TEST_SPLIT_SIZE = 0.2 # validation split
-RANDOM_SEED = 43
-NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+RANDOM_SEED = 42
+NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,7 +63,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create timestamp
 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-RESULTS_FOLDER = RESULTS_PATH + f"results_{timestamp}/"
+RESULTS_FOLDER = RESULTS_PATH + f"new_results_{timestamp}/"
 METRICES_FOLDER = RESULTS_PATH + "metrices/"
 
 # Set seed for reproducibility
@@ -88,9 +92,15 @@ except Exception as e:
 #  ## 3. Import Data
 
 # %%
-data = pd.read_csv(DATA_PATH, sep = '\t')
-print(data)
-
+if SEPERATED_DATASET:
+    train_valid_data = pd.read_csv(TRAINING_VALIDATION_DATA_PATH, sep = '\t')
+    testing_data = pd.read_csv(TESTING_DATA_PATH, sep = '\t')
+    print(train_valid_data)
+    print(testing_data)
+else:
+    data = pd.read_csv(DATA_PATH, sep = '\t')
+    print(data)
+    
 # %% [markdown]
 #  ## 4. Data preparation (labels and text extraction and remaping)
 
@@ -121,7 +131,11 @@ print("Labels after mapping:  ", labels[:11])
 #  ## 5. Data Set  Distribution
 
 # %%
-class_counts = data['class'].value_counts()
+if SEPERATED_DATASET:
+    class_counts = train_valid_data['class'].value_counts()
+else:
+    class_counts = data['class'].value_counts()
+
 
 # Plot
 ax = class_counts.plot(kind='bar', title='Class Distribution')
@@ -135,6 +149,45 @@ plt.tight_layout()
 #plt.savefig(RESULTS_FOLDER + "class_distribution.png")
 #plt.show()
 plt.close()
+
+# %% [markdown]
+# ## 5. Data preparation (labels and text extraction and remaping)
+
+# %%
+#Can select only a subset of the data
+
+# Label mappings
+id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
+label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
+
+
+# Load data text
+if SEPERATED_DATASET:
+    train_valid_texts = train_valid_data['post'].values
+    test_texts = testing_data['post'].values
+    print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
+    print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
+    
+    # Map labels to numeric values
+    train_valid_data['class'] = train_valid_data['class'].map(label2id)
+    labels_train_valid = train_valid_data['class'].values
+    testing_data['class'] = testing_data['class'].map(label2id)
+    labels_testing = testing_data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels_train_valid[:11])
+    print("Labels after mapping:  ", labels_testing[:11])
+    
+else:
+    texts = data['post'].values
+    print("Labels before mapping: \n", data['class'].values[:11])
+    
+    # Map labels to numeric values
+    data['class'] = data['class'].map(label2id)
+    labels = data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels[:11])
 
 
 # %% [markdown]
@@ -218,19 +271,36 @@ class HateSpeechDataset(Dataset):
 #  - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
 # 
 # 
+
 # 
 #  [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
 
 # %%
-# Spliting data (60% train, 20% validation and 20% test)
-train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
-    texts, labels, test_size=0.2, random_state=RANDOM_SEED
-)
+
+
 
 # splitting by 0.25 because: 0.25 x 0.8 = 0.2
-train_texts, val_texts, train_labels, val_labels = train_test_split(
-    train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
-)
+# train_texts, val_texts, train_labels, val_labels = train_test_split(
+#     train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+# )
+
+if SEPERATED_DATASET:
+    test_texts, test_labels = test_texts, labels_testing
+    
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_valid_texts, labels_train_valid, test_size=0.25, random_state=RANDOM_SEED
+    )
+else:
+    # Spliting data (60% train, 20% validation and 20% test)
+    train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+        texts, labels, test_size=0.2, random_state=RANDOM_SEED
+    )
+    
+    # splitting by 0.25 because: 0.25 x 0.8 = 0.2
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+    )
+
 
 
 # TRAIN dataset
@@ -311,6 +381,12 @@ model.to(device)
 
 # %%
 
+num_training_steps = EPOCHS * len(train_dataloader)
+# feel free to experiment with different num_warmup_steps
+
+# lr_scheduler = get_scheduler(
+#     name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+# )
 lr_scheduler = CosineAnnealingWarmRestarts(
     optimizer,
     T_0=5,          # Initial restart interval (in epochs)
@@ -351,14 +427,13 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         logits = outputs.logits
 
         # Compute the loss
-        loss = criterion(logits, target)
+        loss = outputs.loss
 
         # Backward pass
         loss.backward()
 
         # Gradient clipping
         clip_grad_norm_(model.parameters(), max_norm=1)
-
 
         # Perform one step of the optimizer
         optimizer.step()
@@ -430,9 +505,9 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
             # Get the logits from the outputs
             logits = outputs.logits
 
-        # Compute the loss
-        loss = criterion(logits, target)
-    
+            # Compute the loss
+            loss = outputs.loss
+        
         # Use argmax to get the predicted class
         preds = torch.argmax(logits, dim=-1)
         
@@ -446,6 +521,7 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
         progress_bar.update(1)
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+
         
     # Average the loss over all batches
     epoch_loss /= len(val_dataloader)
@@ -553,13 +629,13 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
 # %%
 def precision(preds, target):
-    return precision_score(target, preds, average='macro')
+    return precision_score(target, preds, average='macro',zero_division=0)
 
 def recall(preds, target):
-    return recall_score(target, preds,average='macro')
+    return recall_score(target, preds,average='macro',zero_division=0)
 
 def f1(preds, target):
-    return f1_score(target, preds, average='macro')
+    return f1_score(target, preds, average='macro',zero_division=0)
 
 def acc(preds, target):
     return accuracy_score(target, preds)
@@ -623,12 +699,11 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
         progress_bar.update(1)
 
-    # Compute metrics on the entire dataset
+     # Compute metrics on the entire dataset
     test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate"])
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=LABELS, zero_division=0)
         
     return test_metrics, metrics_report
-
 
 # %%
 def testing_process(model, metrics, test_dataloader, device):
@@ -643,6 +718,7 @@ def testing_process(model, metrics, test_dataloader, device):
     return test_metrics, metrics_report
 
 
+# %%
 # %%
 def saveMetrics(metrics, metrics_report):
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt", "w") as f:
@@ -662,7 +738,6 @@ def saveMetrics(metrics, metrics_report):
         f.write("\n Testing results report \n \n")
         f.write(metrics_report)
 
-
 # %%
 def showMetrics():
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt") as f:
@@ -674,9 +749,6 @@ test_metrics, metrics_report = testing_process(model, metrics, test_dataloader, 
 
 # %% [markdown]
 #  Save the testing results in a file
-
-# %%
-print(metrics_report)
 
 # %%
 saveMetrics(test_metrics, metrics_report)
@@ -803,6 +875,7 @@ true_labels = [
     label2id["not_hate"]
 ]
 
+# %%
 predictions = classification(sentences, true_labels, show=True)
 
 
