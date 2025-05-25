@@ -34,8 +34,15 @@ from csv import writer
 # ## 2. Configuration
 
 # %%
+SEPERATED_DATASET = True # if True, the dataset is separated in training and testing sets
+
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+if SEPERATED_DATASET:
+    TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TRAINING_VALIDATION_SET2.tsv'    # 'data/implicit-hate-corpus/TRAINING_VALIDATION_SET.tsv'
+    TESTING_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TESTING_SET2.tsv'                            # 'data/implicit-hate-corpus/TESTING_SET.tsv' 
+else:
+    DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+    
 RESULTS_PATH = 'results/'
 
 
@@ -56,7 +63,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create timestamp
 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-RESULTS_FOLDER = RESULTS_PATH + f"results_{timestamp}/"
+RESULTS_FOLDER = RESULTS_PATH + f"new_results_{timestamp}/"
 METRICES_FOLDER = RESULTS_PATH + "metrices/"
 
 # Set seed for reproducibility
@@ -83,14 +90,24 @@ except Exception as e:
 # ## 3. Import Data 
 
 # %%
-data = pd.read_csv(DATA_PATH, sep = '\t')
-print(data)
-
+if SEPERATED_DATASET:
+    train_valid_data = pd.read_csv(TRAINING_VALIDATION_DATA_PATH, sep = '\t')
+    testing_data = pd.read_csv(TESTING_DATA_PATH, sep = '\t')
+    print(train_valid_data)
+    print(testing_data)
+else:
+    data = pd.read_csv(DATA_PATH, sep = '\t')
+    print(data)
+    
 # %% [markdown]
 # ## 4. Data Set  Distribution 
 
 # %%
-class_counts = data['class'].value_counts()
+if SEPERATED_DATASET:
+    class_counts = train_valid_data['class'].value_counts()
+else:
+    class_counts = data['class'].value_counts()
+
 
 # Plot
 ax = class_counts.plot(kind='bar', title='Class Distribution')
@@ -117,16 +134,32 @@ label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
 
 
 # Load data text
-texts = data['post'].values
-
-# Print raw numeric labels
-print("Labels before mapping: \n", data['class'].values[:11])
-
-# Map labels to numeric values
-data['class'] = data['class'].map(label2id)
-labels = data['class'].values
-# Print string labels
-print("Labels after mapping:  ", labels[:11])
+if SEPERATED_DATASET:
+    train_valid_texts = train_valid_data['post'].values
+    test_texts = testing_data['post'].values
+    print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
+    print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
+    
+    # Map labels to numeric values
+    train_valid_data['class'] = train_valid_data['class'].map(label2id)
+    labels_train_valid = train_valid_data['class'].values
+    testing_data['class'] = testing_data['class'].map(label2id)
+    labels_testing = testing_data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels_train_valid[:11])
+    print("Labels after mapping:  ", labels_testing[:11])
+    
+else:
+    texts = data['post'].values
+    print("Labels before mapping: \n", data['class'].values[:11])
+    
+    # Map labels to numeric values
+    data['class'] = data['class'].map(label2id)
+    labels = data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels[:11])
 
 
 # %% [markdown]
@@ -199,22 +232,38 @@ class HateSpeechDataset(Dataset):
 
 # %% [markdown]
 # To train our model, we will split the data in 3 categories as it is usually recommanded:
-# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this 
 # - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
 # - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
 # 
 # [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
 
 # %%
-# Spliting data (60% train, 20% validation and 20% test)
-train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
-    texts, labels, test_size=0.2, random_state=RANDOM_SEED
-)
+
+
 
 # splitting by 0.25 because: 0.25 x 0.8 = 0.2
-train_texts, val_texts, train_labels, val_labels = train_test_split(
-    train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
-)
+# train_texts, val_texts, train_labels, val_labels = train_test_split(
+#     train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+# )
+
+if SEPERATED_DATASET:
+    test_texts, test_labels = test_texts, labels_testing
+    
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_valid_texts, labels_train_valid, test_size=0.25, random_state=RANDOM_SEED
+    )
+else:
+    # Spliting data (60% train, 20% validation and 20% test)
+    train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+        texts, labels, test_size=0.2, random_state=RANDOM_SEED
+    )
+    
+    # splitting by 0.25 because: 0.25 x 0.8 = 0.2
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+    )
+
 
 
 # TRAIN dataset
@@ -292,6 +341,9 @@ model.to(device)
 num_training_steps = EPOCHS * len(train_dataloader)
 # feel free to experiment with different num_warmup_steps
 
+# lr_scheduler = get_scheduler(
+#     name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+# )
 lr_scheduler = CosineAnnealingWarmRestarts(
     optimizer,
     T_0=5,          # Initial restart interval (in epochs)
@@ -425,7 +477,6 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
         progress_bar.update(1)
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    epoch_metrics = {k: metrics[k](all_labels, all_predictions) for k in metrics.keys()}  # Fixed order!
 
         
     # Average the loss over all batches
