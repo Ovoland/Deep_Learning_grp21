@@ -34,15 +34,22 @@ from csv import writer
 # ## 2. Configuration
 
 # %%
+SEPERATED_DATASET = False # if True, the dataset is separated in training and testing sets
+
 MODEL_NAME = 'GroNLP/hateBERT'
-DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+if SEPERATED_DATASET:
+    TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TRAINING_VALIDATION_SET2.tsv'    # 'data/implicit-hate-corpus/TRAINING_VALIDATION_SET.tsv'
+    TESTING_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/TESTING_SET2.tsv'                            # 'data/implicit-hate-corpus/TESTING_SET.tsv' 
+else:
+    DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
+    
 RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
 EPOCHS = 10
-LEARNING_RATE = 5e-6
+LEARNING_RATE = 3e-5
 WEIGHT_DECAY = 0.05
 DROPOUT = 0.3
 PATIENCE = 8
@@ -57,7 +64,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Create timestamp
 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M')
-RESULTS_FOLDER = RESULTS_PATH + f"results_{timestamp}/"
+RESULTS_FOLDER = RESULTS_PATH + f"new_results_{timestamp}/"
 METRICES_FOLDER = RESULTS_PATH + "metrices/"
 
 # Set seed for reproducibility
@@ -84,9 +91,15 @@ except Exception as e:
 # ## 3. Import Data 
 
 # %%
-data = pd.read_csv(DATA_PATH, sep = '\t')
-print(data)
-
+if SEPERATED_DATASET:
+    train_valid_data = pd.read_csv(TRAINING_VALIDATION_DATA_PATH, sep = '\t')
+    testing_data = pd.read_csv(TESTING_DATA_PATH, sep = '\t')
+    print(train_valid_data)
+    print(testing_data)
+else:
+    data = pd.read_csv(DATA_PATH, sep = '\t')
+    print(data)
+    
 # %% [markdown]
 #  ## 4. Data preparation (labels and text extraction and remaping)
 
@@ -98,26 +111,52 @@ id2label = {i: label for i, label in enumerate(LABELS)}
 label2id = {label: i for i, label in enumerate(LABELS)}
 
 #Remove the explicit hate speech to do binary classification
-data = data[data["class"].isin(LABELS)]
-
-# Map labels to numeric values
-data['class'] = data['class'].map(label2id)
-
-# Print raw numeric labels
-print("Labels before mapping: \n", data['class'].values[:11])
 
 # Load data text
-texts = data['post'].values
+if SEPERATED_DATASET:
+    #Keep only the selected classe
+    train_valid_data = train_valid_data[train_valid_data["class"].isin(LABELS)]
+    testing_data = testing_data[testing_data["class"].isin(LABELS)]
+    
+    train_valid_texts = train_valid_data['post'].values
+    test_texts = testing_data['post'].values
+    print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
+    print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
+    
+    # Map labels to numeric values
+    train_valid_data['class'] = train_valid_data['class'].map(label2id)
+    labels_train_valid = train_valid_data['class'].values
+    testing_data['class'] = testing_data['class'].map(label2id)
+    labels_testing = testing_data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels_train_valid[:11])
+    print("Labels after mapping:  ", labels_testing[:11])
+    
+else:
+    #Keep only the selected classe
+    data = data[data["class"].isin(LABELS)]
 
-labels = data['class'].values
-# Print string labels
-print("Labels after mapping:  ", labels[:11])
+    texts = data['post'].values
+    print("Labels before mapping: \n", data['class'].values[:11])
+    
+    # Map labels to numeric values
+    data['class'] = data['class'].map(label2id)
+    labels = data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels[:11])
+
 
 # %% [markdown]
 #  ## 5. Data Set  Distribution
 
 # %%
-class_counts = data['class'].value_counts()
+if SEPERATED_DATASET:
+    class_counts = train_valid_data['class'].value_counts()
+else:
+    class_counts = data['class'].value_counts()
+
 
 # Plot
 ax = class_counts.plot(kind='bar', title='Class Distribution')
@@ -132,7 +171,6 @@ plt.tight_layout()
 #plt.show()
 plt.close()
 
-# %% [markdown]
 # # 6. Load Hate Bert model
 # 
 # We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
@@ -202,22 +240,38 @@ class HateSpeechDataset(Dataset):
 
 # %% [markdown]
 # To train our model, we will split the data in 3 categories as it is usually recommanded:
-# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this 
 # - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
 # - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
 # 
 # [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
 
 # %%
-# Spliting data (60% train, 20% validation and 20% test)
-train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
-    texts, labels, test_size=0.2, random_state=RANDOM_SEED
-)
+
+
 
 # splitting by 0.25 because: 0.25 x 0.8 = 0.2
-train_texts, val_texts, train_labels, val_labels = train_test_split(
-    train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
-)
+# train_texts, val_texts, train_labels, val_labels = train_test_split(
+#     train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+# )
+
+if SEPERATED_DATASET:
+    test_texts, test_labels = test_texts, labels_testing
+    
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_valid_texts, labels_train_valid, test_size=0.25, random_state=RANDOM_SEED
+    )
+else:
+    # Spliting data (60% train, 20% validation and 20% test)
+    train_val_texts, test_texts, train_val_labels, test_labels = train_test_split(
+        texts, labels, test_size=0.2, random_state=RANDOM_SEED
+    )
+    
+    # splitting by 0.25 because: 0.25 x 0.8 = 0.2
+    train_texts, val_texts, train_labels, val_labels = train_test_split(
+        train_val_texts, train_val_labels, test_size=0.25, random_state=RANDOM_SEED
+    )
+
 
 
 # TRAIN dataset
@@ -295,6 +349,9 @@ model.to(device)
 num_training_steps = EPOCHS * len(train_dataloader)
 # feel free to experiment with different num_warmup_steps
 
+# lr_scheduler = get_scheduler(
+#     name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+# )
 lr_scheduler = CosineAnnealingWarmRestarts(
     optimizer,
     T_0=5,          # Initial restart interval (in epochs)
@@ -526,7 +583,6 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
     progress_bar.close()
     print("Training completed.")
     return train_metrics_log, val_metrics_log
-
 
 
 # %% [markdown]
