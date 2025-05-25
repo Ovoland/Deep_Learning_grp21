@@ -42,18 +42,20 @@ def split_original_dataset_equal_classes_with_generated(
     class_column = "class"
     classes = ["not_hate", "implicit_hate", "explicit_hate"]
 
-    # Find the minimum class count for balanced splitting
-    class_counts = original_df[class_column].value_counts()
-    min_class_count = min(class_counts.get(cls, 0) for cls in classes)
-
-    # Calculate number of samples per class for test set
-    n_test_per_class = int(min_class_count * test_ratio)
+    # Desired test set sizes for each class
+    desired_test_sizes = {
+        "not_hate": 3987,
+        "implicit_hate": 2130,
+        "explicit_hate": 327
+    }
 
     test_dfs = []
     train_dfs = []
 
     for cls in classes:
         cls_df = original_df[original_df[class_column] == cls]
+        # Determine the number of samples for the test set based on the desired size
+        n_test_per_class = min(len(cls_df), desired_test_sizes[cls])
         # Shuffle and split
         cls_test = cls_df.sample(n=n_test_per_class, random_state=42)
         cls_train = cls_df.drop(cls_test.index)
@@ -87,6 +89,9 @@ def split_original_dataset_equal_classes_with_generated(
 
 
 
+
+
+
 def plot_class_distribution(tsv_path, class_column):
     df = pd.read_csv(tsv_path, sep='\t')
     all_classes = ["not_hate", "implicit_hate", "explicit_hate"]
@@ -105,9 +110,12 @@ if __name__ == "__main__":
 
     implicit_generated_tsv = "data/implicit-hate-corpus/generated_implicit_ONLY.tsv"
     explicit_generated_tsv = "data/implicit-hate-corpus/generated_explicit_ONLY.tsv"
-    train_output_tsv = "test/FINAL_TRAINING_SET.tsv"
-    test_output_tsv = "test/FINAL_TESTING_SET.tsv"
+    train_output_tsv = "data/implicit-hate-corpus/augmented_explicit_only/FINAL_TRAINING_SET.tsv"
+    test_output_tsv = "data/implicit-hate-corpus/augmented_explicit_only/FINAL_TESTING_SET.tsv"
+    # train_output_tsv = "test/FINAL_TRAINING_SET.tsv"
+    # test_output_tsv = "test/FINAL_TESTING_SET.tsv"
     test_ratio = 0.3
+    
     
     split_original_dataset_equal_classes_with_generated(
         original_tsv, 
