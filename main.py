@@ -40,15 +40,16 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 32
-EPOCHS = 15
+BATCH_SIZE = 16
+EPOCHS = 10
 LEARNING_RATE = 5e-6
 WEIGHT_DECAY = 0.05
-DROPOUT = 0.5
-PATIENCE = 5
+DROPOUT = 0.3
+PATIENCE = 8
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 42
-NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+LABELS = ['not_hate', 'implicit_hate', 'explicit_hate'][:2]  # Labels for the classification task
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,7 +88,33 @@ data = pd.read_csv(DATA_PATH, sep = '\t')
 print(data)
 
 # %% [markdown]
-# ## 4. Data Set  Distribution 
+#  ## 4. Data preparation (labels and text extraction and remaping)
+
+# %%
+#Can select only a subset of the data
+
+# Label mappings
+id2label = {0: "not_hate", 1: "implicit_hate"}#, 2: "explicit_hate"}
+label2id = {"not_hate": 0, "implicit_hate": 1}#, "explicit_hate": 2}
+
+#Remove the explicit hate speech to do binary classification
+data = data[data["class"].isin(LABELS)]
+
+# Map labels to numeric values
+data['class'] = data['class'].map(label2id)
+
+# Print raw numeric labels
+print("Labels before mapping: \n", data['class'].values[:11])
+
+# Load data text
+texts = data['post'].values
+
+labels = data['class'].values
+# Print string labels
+print("Labels after mapping:  ", labels[:11])
+
+# %% [markdown]
+#  ## 5. Data Set  Distribution
 
 # %%
 class_counts = data['class'].value_counts()
@@ -104,30 +131,6 @@ plt.tight_layout()
 #plt.savefig(RESULTS_FOLDER + "class_distribution.png")
 #plt.show()
 plt.close()
-
-# %% [markdown]
-# ## 5. Data preparation (labels and text extraction and remaping)
-
-# %%
-#Can select only a subset of the data
-
-# Label mappings
-id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
-label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
-
-
-# Load data text
-texts = data['post'].values
-
-# Print raw numeric labels
-print("Labels before mapping: \n", data['class'].values[:11])
-
-# Map labels to numeric values
-data['class'] = data['class'].map(label2id)
-labels = data['class'].values
-# Print string labels
-print("Labels after mapping:  ", labels[:11])
-
 
 # %% [markdown]
 # # 6. Load Hate Bert model
@@ -425,7 +428,6 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
         progress_bar.update(1)
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    epoch_metrics = {k: metrics[k](all_labels, all_predictions) for k in metrics.keys()}  # Fixed order!
 
         
     # Average the loss over all batches
@@ -600,7 +602,7 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
      # Compute metrics on the entire dataset
     test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"], zero_division=0)
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=LABELS, zero_division=0)
         
     return test_metrics, metrics_report
 
