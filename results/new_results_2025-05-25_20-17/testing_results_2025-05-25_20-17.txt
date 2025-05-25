@@ -1,0 +1,28 @@
+MULTICLASS
+
+Training configuration 
+Batch size: 16 
+Epochs: 10 
+Learning rate: 5e-06 
+Seed 42 
+Decay 0.05 
+Dropout: 0.3 
+  
+Testing results metrices 
+ 
+- P, : 0.6328366669098137 
+- R, : 0.5889421242312604 
+- ACC, : 0.7232309124767226 
+- F1-weighted, : 0.6016194351345613 
+
+ Testing results report 
+ 
+               precision    recall  f1-score   support
+
+     not_hate      0.773     0.830     0.800      2489
+implicit_hate      0.695     0.583     0.634      1673
+explicit_hate      0.300     0.485     0.370       134
+
+     accuracy                          0.723      4296
+    macro avg      0.589     0.633     0.602      4296
+ weighted avg      0.728     0.723     0.722      4296

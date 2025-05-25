@@ -34,7 +34,7 @@ from csv import writer
 # ## 2. Configuration
 
 # %%
-SEPERATED_DATASET = True # if True, the dataset is separated in training and testing sets
+SEPERATED_DATASET = False # if True, the dataset is separated in training and testing sets
 
 MODEL_NAME = 'GroNLP/hateBERT'
 if SEPERATED_DATASET:
@@ -49,13 +49,13 @@ RESULTS_PATH = 'results/'
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
 BATCH_SIZE = 16
 EPOCHS = 10
-LEARNING_RATE = 3e-5
+LEARNING_RATE = 5e-6
 WEIGHT_DECAY = 0.05
 DROPOUT = 0.3
 PATIENCE = 8
-TEST_SPLIT_SIZE = 0.2 # validation split
+# TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 42
-NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+NUM_LABELS = 2 # 3 = ['not_hate', 'implicit_hate', 'explicit_hate'] ; 2 = ['not_hate', 'implicit_hate']
 LABELS = ['not_hate', 'implicit_hate', 'explicit_hate'][:NUM_LABELS]  # Labels for the classification task
 
 # Set device (GPU if available, else CPU)
