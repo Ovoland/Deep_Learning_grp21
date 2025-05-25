@@ -1,0 +1,16 @@
+Example sentence: I like trains
+ ---- Model classification: implicit_hate
+ ---- Real classification:  not_hate
+
+Example sentence: I love white snow. I would hate black snow though.
+ ---- Model classification: implicit_hate
+ ---- Real classification:  not_hate
+
+Example sentence: Is it me or there are too many gays in the world?
+ ---- Model classification: implicit_hate
+ ---- Real classification:  implicit_hate
+
+Example sentence: I love the new movie with the black guy.
+ ---- Model classification: not_hate
+ ---- Real classification:  not_hate
+
