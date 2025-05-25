@@ -49,7 +49,7 @@ PATIENCE = 8
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 42
 NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
-LABELS = ['not_hate', 'implicit_hate', 'explicit_hate'][:2]  # Labels for the classification task
+LABELS = ['not_hate', 'implicit_hate', 'explicit_hate'][:NUM_LABELS]  # Labels for the classification task
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -94,8 +94,8 @@ print(data)
 #Can select only a subset of the data
 
 # Label mappings
-id2label = {0: "not_hate", 1: "implicit_hate"}#, 2: "explicit_hate"}
-label2id = {"not_hate": 0, "implicit_hate": 1}#, "explicit_hate": 2}
+id2label = {i: label for i, label in enumerate(LABELS)}
+label2id = {label: i for i, label in enumerate(LABELS)}
 
 #Remove the explicit hate speech to do binary classification
 data = data[data["class"].isin(LABELS)]
