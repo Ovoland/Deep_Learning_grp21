@@ -55,7 +55,8 @@ DROPOUT = 0.3
 PATIENCE = 8
 TEST_SPLIT_SIZE = 0.2 # validation split
 RANDOM_SEED = 42
-NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+NUM_LABELS = 2 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
+LABELS = ['not_hate', 'implicit_hate', 'explicit_hate'][:NUM_LABELS]  # Labels for the classification task
 
 # Set device (GPU if available, else CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -100,7 +101,55 @@ else:
     print(data)
     
 # %% [markdown]
-# ## 4. Data Set  Distribution 
+#  ## 4. Data preparation (labels and text extraction and remaping)
+
+# %%
+#Can select only a subset of the data
+
+# Label mappings
+id2label = {i: label for i, label in enumerate(LABELS)}
+label2id = {label: i for i, label in enumerate(LABELS)}
+
+#Remove the explicit hate speech to do binary classification
+
+# Load data text
+if SEPERATED_DATASET:
+    #Keep only the selected classe
+    train_valid_data = train_valid_data[train_valid_data["class"].isin(LABELS)]
+    testing_data = testing_data[testing_data["class"].isin(LABELS)]
+    
+    train_valid_texts = train_valid_data['post'].values
+    test_texts = testing_data['post'].values
+    print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
+    print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
+    
+    # Map labels to numeric values
+    train_valid_data['class'] = train_valid_data['class'].map(label2id)
+    labels_train_valid = train_valid_data['class'].values
+    testing_data['class'] = testing_data['class'].map(label2id)
+    labels_testing = testing_data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels_train_valid[:11])
+    print("Labels after mapping:  ", labels_testing[:11])
+    
+else:
+    #Keep only the selected classe
+    data = data[data["class"].isin(LABELS)]
+
+    texts = data['post'].values
+    print("Labels before mapping: \n", data['class'].values[:11])
+    
+    # Map labels to numeric values
+    data['class'] = data['class'].map(label2id)
+    labels = data['class'].values
+    
+    # Print string labels
+    print("Labels after mapping:  ", labels[:11])
+
+
+# %% [markdown]
+#  ## 5. Data Set  Distribution
 
 # %%
 if SEPERATED_DATASET:
@@ -122,47 +171,6 @@ plt.tight_layout()
 #plt.show()
 plt.close()
 
-# %% [markdown]
-# ## 5. Data preparation (labels and text extraction and remaping)
-
-# %%
-#Can select only a subset of the data
-
-# Label mappings
-id2label = {0: "not_hate", 1: "implicit_hate", 2: "explicit_hate"}
-label2id = {"not_hate": 0, "implicit_hate": 1, "explicit_hate": 2}
-
-
-# Load data text
-if SEPERATED_DATASET:
-    train_valid_texts = train_valid_data['post'].values
-    test_texts = testing_data['post'].values
-    print("Labels before mapping (train_valid_data): \n", train_valid_data['class'].values[:11])
-    print("Labels before mapping (testing_data): \n", testing_data['class'].values[:11])
-    
-    # Map labels to numeric values
-    train_valid_data['class'] = train_valid_data['class'].map(label2id)
-    labels_train_valid = train_valid_data['class'].values
-    testing_data['class'] = testing_data['class'].map(label2id)
-    labels_testing = testing_data['class'].values
-    
-    # Print string labels
-    print("Labels after mapping:  ", labels_train_valid[:11])
-    print("Labels after mapping:  ", labels_testing[:11])
-    
-else:
-    texts = data['post'].values
-    print("Labels before mapping: \n", data['class'].values[:11])
-    
-    # Map labels to numeric values
-    data['class'] = data['class'].map(label2id)
-    labels = data['class'].values
-    
-    # Print string labels
-    print("Labels after mapping:  ", labels[:11])
-
-
-# %% [markdown]
 # # 6. Load Hate Bert model
 # 
 # We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
@@ -650,7 +658,7 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
      # Compute metrics on the entire dataset
     test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"], zero_division=0)
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=LABELS, zero_division=0)
         
     return test_metrics, metrics_report
 
