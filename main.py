@@ -31,7 +31,7 @@ from datetime import datetime
 from csv import writer
 
 # %% [markdown]
-# ## 2. Configuration
+#  ## 2. Configuration
 
 # %%
 SEPERATED_DATASET = False # if True, the dataset is separated in training and testing sets
@@ -73,6 +73,7 @@ torch.manual_seed(RANDOM_SEED)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(RANDOM_SEED)
 
+
 # %%
 directory_name = RESULTS_FOLDER
 # Create the directory
@@ -86,8 +87,9 @@ except PermissionError:
 except Exception as e:
     print(f"An error occurred: {e}")
 
+
 # %% [markdown]
-# ## 3. Import Data 
+#  ## 3. Import Data
 
 # %%
 if SEPERATED_DATASET:
@@ -100,7 +102,33 @@ else:
     print(data)
     
 # %% [markdown]
-# ## 4. Data Set  Distribution 
+#  ## 4. Data preparation (labels and text extraction and remaping)
+
+# %%
+#Can select only a subset of the data
+
+# Label mappings
+id2label = {0: "not_hate", 1: "implicit_hate"}#, 2: "explicit_hate"}
+label2id = {"not_hate": 0, "implicit_hate": 1}#, "explicit_hate": 2}
+
+#Remove the explicit hate speech to do binary classification
+data = data[data["class"] != "explicit_hate"]
+
+# Map labels to numeric values
+data['class'] = data['class'].map(label2id)
+
+# Print raw numeric labels
+print("Labels before mapping: \n", data['class'].values[:11])
+
+# Load data text
+texts = data['post'].values
+
+labels = data['class'].values
+# Print string labels
+print("Labels after mapping:  ", labels[:11])
+
+# %% [markdown]
+#  ## 5. Data Set  Distribution
 
 # %%
 if SEPERATED_DATASET:
@@ -163,9 +191,11 @@ else:
 
 
 # %% [markdown]
-# # 6. Load Hate Bert model
+#  # 6. Load Hate Bert model
 # 
-# We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
+# 
+# 
+#  We decide to use the Hate Bert model, a Bert model specially trained to detect hate. This model can be use from hugging face [plateforme](https://huggingface.co/transformers/v3.0.2/model_doc/auto.html).
 
 # %%
 model = AutoModelForSequenceClassification.from_pretrained(
@@ -181,16 +211,19 @@ model = AutoModelForSequenceClassification.from_pretrained(
 
 print(model.num_parameters())
 
+
 # %% [markdown]
-# # 7. Load Tokenizer
+#  # 7. Load Tokenizer
 # 
-# From hugging face plateforme, we can also load the tokenizer specially made for Hate Bert
+# 
+# 
+#  From hugging face plateforme, we can also load the tokenizer specially made for Hate Bert
 
 # %%
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 # %% [markdown]
-# # 8. Dataset Initialization
+#  # 8. Dataset Initialization
 
 # %%
 class HateSpeechDataset(Dataset):
@@ -222,21 +255,25 @@ class HateSpeechDataset(Dataset):
                 'input_ids': encoding['input_ids'].flatten(),
                 'attention_mask': encoding['attention_mask'].flatten(),
                 'labels': torch.tensor(label, dtype=torch.long)
-            }
-    
-        
-           
+            }   
+
 
 # %% [markdown]
-# # 9. Dataset and DataLoader Splitting
+#  # 9. Dataset and DataLoader Splitting
 
 # %% [markdown]
-# To train our model, we will split the data in 3 categories as it is usually recommanded:
-# - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this 
-# - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters. 
-# - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
+#  To train our model, we will split the data in 3 categories as it is usually recommanded:
 # 
-# [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
+#  - *Training*: The actual dataset that we use to train the model (weights and biases in the case of a Neural Network). The model sees and learns from this data
+# 
+#  - *Validation*: The sample of data used to provide an unbiased evaluation of a model fit on the training dataset while tuning model hyperparameters.
+# 
+#  - *Testing*: The sample of data used to provide an unbiased evaluation of a final model fit on the training dataset.
+# 
+# 
+
+# 
+#  [Source](https://medium.com/data-science/train-validation-and-test-sets-72cb40cba9e7)
 
 # %%
 
@@ -313,12 +350,17 @@ test_dataloader = DataLoader(
     shuffle=False
 )
 
+
 # %% [markdown]
-# # 10. Training Configuration
+#  # 10. Training Configuration
 # 
-# We use the default training configuration from the kaggle page
+# 
+# 
+#  We use the default training configuration from the kaggle page
 
 # %%
+
+
 optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 # Class distribution from your dataset
@@ -335,9 +377,10 @@ criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
 model.to(device)
 
 # %% [markdown]
-# # 11. Scheduler 
+#  # 11. Scheduler
 
 # %%
+
 num_training_steps = EPOCHS * len(train_dataloader)
 # feel free to experiment with different num_warmup_steps
 
@@ -351,8 +394,9 @@ lr_scheduler = CosineAnnealingWarmRestarts(
     eta_min=1e-6    # Minimum learning rate
 )
 
+
 # %% [markdown]
-# # 12. Training 
+#  # 12. Training
 
 # %%
 def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, epoch, progress_bar):
@@ -429,7 +473,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
 
 
 # %% [markdown]
-# # 13. Validation
+#  # 13. Validation
 
 # %%
 def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
@@ -488,8 +532,9 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
 
     return epoch_loss, epoch_metrics
 
+
 # %% [markdown]
-# # 14. Plotting the training and testing
+#  # 14. Plotting the training and testing
 
 # %%
 def plot_training(train_loss, val_loss, metrics_names, train_metrics_logs, test_metrics_logs, savePicture = True):
@@ -524,8 +569,9 @@ def update_metrics_log(metrics_names, metrics_log, new_metrics_dict):
         metrics_log[i].append(new_metrics_dict[curr_metric_name])
     return metrics_log
 
+
 # %% [markdown]
-# # 15. Iterative training and validating
+#  # 15. Iterative training and validating
 
 # %%
 def training_model(model, optimizer, criterion, metrics, train_loader, val_loader, n_epochs, device):
@@ -577,8 +623,9 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
     return train_metrics_log, val_metrics_log
 
 
+
 # %% [markdown]
-# # 16 Evaluation metrics
+#  # 16 Evaluation metrics
 
 # %%
 def precision(preds, target):
@@ -593,8 +640,9 @@ def f1(preds, target):
 def acc(preds, target):
     return accuracy_score(target, preds)
 
+
 # %% [markdown]
-# # 17. Main
+#  # 17. Main
 
 # %%
 metrics = {'P': precision, 'R': recall, 'ACC': acc, 'F1-weighted': f1}
@@ -609,8 +657,9 @@ if not os.path.exists(RESULTS_FOLDER):
     os.mkdir(RESULTS_FOLDER)
 torch.save(model.state_dict(), RESULTS_FOLDER + f'base_model_{timestamp}.pth')
 
+
 # %% [markdown]
-# # 18. Testing 
+#  # 18. Testing
 
 # %%
 def testing(model, metrics, test_dataloader, device, progress_bar):
@@ -620,6 +669,8 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
     # Initialize lists to store predictions and true labels
     all_predictions = []
     all_labels = []
+
+    test_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
 
     # Use tqdm for the evaluation dataloader
     eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
@@ -650,7 +701,7 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
      # Compute metrics on the entire dataset
     test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"], zero_division=0)
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=LABELS, zero_division=0)
         
     return test_metrics, metrics_report
 
@@ -665,6 +716,7 @@ def testing_process(model, metrics, test_dataloader, device):
     progress_bar.close()
     print("Training completed.")
     return test_metrics, metrics_report
+
 
 # %%
 # %%
@@ -691,11 +743,12 @@ def showMetrics():
     with open(RESULTS_FOLDER + f"testing_results_{timestamp}.txt") as f:
         print(f.read())
 
+
 # %%
 test_metrics, metrics_report = testing_process(model, metrics, test_dataloader, device)
 
 # %% [markdown]
-# Save the testing results in a file
+#  Save the testing results in a file
 
 # %%
 saveMetrics(test_metrics, metrics_report)
@@ -730,16 +783,18 @@ def saveResults(metrices):
         # Close the file object
         f_object.close()
 
+
 # %%
 saveResults(test_metrics)
 
 # %% [markdown]
-# # 19. Inference
+#  # 19. Inference
 
 # %%
 def saveInference(string):
     with open(RESULTS_FOLDER + f"inference_results_{timestamp}.txt", "a", encoding="utf-8") as f:
         f.write(string + "\n")
+
 
 # %%
 def classification(example_text, example_label, show=False, save=True):
@@ -822,5 +877,8 @@ true_labels = [
 
 # %%
 predictions = classification(sentences, true_labels, show=True)
+
+
+
 
 
