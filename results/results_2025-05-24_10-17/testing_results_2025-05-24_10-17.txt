@@ -1,0 +1,26 @@
+Training configuration 
+Batch size: 16 
+Epochs: 25 
+Learning rate: 5e-06 
+Seed 43 
+Decay 0.05 
+Dropout: 0.3 
+  
+Testing results metrices 
+ 
+- P, : 0.6031075508275703 
+- R, : 0.5937284468738048 
+- ACC, : 0.7353351955307262 
+- F1-weighted, : 0.5980500734008027 
+
+ Testing results report 
+ 
+               precision    recall  f1-score   support
+
+     not_hate      0.818     0.818     0.818      2641
+implicit_hate      0.645     0.635     0.640      1470
+explicit_hate      0.319     0.357     0.337       185
+
+     accuracy                          0.735      4296
+    macro avg      0.594     0.603     0.598      4296
+ weighted avg      0.737     0.735     0.736      4296

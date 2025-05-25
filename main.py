@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 from torch.nn import BCEWithLogitsLoss
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import DataLoader, TensorDataset
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 from torch.nn.utils import clip_grad_norm_
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers import BertForSequenceClassification
@@ -39,14 +40,14 @@ RESULTS_PATH = 'results/'
 
 
 MAX_LENGTH = 512 #max size of the tokenizer https://huggingface.co/GroNLP/hateBERT/commit/f56d507e4b6a64413aff29e541e1b2178ee79d67
-BATCH_SIZE = 16
-EPOCHS = 5
-LEARNING_RATE = 2e-5
+BATCH_SIZE = 32
+EPOCHS = 15
+LEARNING_RATE = 5e-6
 WEIGHT_DECAY = 0.05
-DROPOUT = 0.3
-PATIENCE = 3
+DROPOUT = 0.5
+PATIENCE = 5
 TEST_SPLIT_SIZE = 0.2 # validation split
-RANDOM_SEED = 43
+RANDOM_SEED = 42
 NUM_LABELS = 3 # 0: not hate, 1: implicit hate, 2: explicit hate /// 
 
 # Set device (GPU if available, else CPU)
@@ -290,8 +291,12 @@ model.to(device)
 # %%
 num_training_steps = EPOCHS * len(train_dataloader)
 # feel free to experiment with different num_warmup_steps
-lr_scheduler = get_scheduler(
-    name="linear", optimizer=optimizer, num_warmup_steps=1, num_training_steps=num_training_steps
+
+lr_scheduler = CosineAnnealingWarmRestarts(
+    optimizer,
+    T_0=5,          # Initial restart interval (in epochs)
+    T_mult=2,       # Multiply factor for increasing T_0 after restart
+    eta_min=1e-6    # Minimum learning rate
 )
 
 # %% [markdown]
@@ -326,7 +331,7 @@ def train_epoch(model, optimizer, criterion, metrics, train_dataloader, device, 
         logits = outputs.logits
 
         # Compute the loss
-        loss = criterion(logits, target)
+        loss = outputs.loss
 
         # Backward pass
         loss.backward()
@@ -404,9 +409,9 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
             # Get the logits from the outputs
             logits = outputs.logits
 
-        # Compute the loss
-        loss = criterion(logits, target)
-    
+            # Compute the loss
+            loss = outputs.loss
+        
         # Use argmax to get the predicted class
         preds = torch.argmax(logits, dim=-1)
         
@@ -420,6 +425,8 @@ def validation(model, criterion, metrics, val_dataloader, device, progress_bar):
         progress_bar.update(1)
         
     epoch_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
+    epoch_metrics = {k: metrics[k](all_labels, all_predictions) for k in metrics.keys()}  # Fixed order!
+
         
     # Average the loss over all batches
     epoch_loss /= len(val_dataloader)
@@ -478,6 +485,12 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
     num_training_steps = n_epochs * len(train_dataloader)
 
+    #Early stopping
+    best_val_loss = float('inf')
+    patience = PATIENCE
+    patience_counter = 0
+    best_model_state = None
+
     progress_bar = tqdm(range(num_training_steps), desc="Training Progress")
 
     print(f"Starting training for {EPOCHS} epochs...") # Use EPOCHS from config
@@ -496,9 +509,22 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
         plot_training(train_loss_log, test_loss_log, metrics_names, train_metrics_log, val_metrics_log)
 
+        if test_loss < best_val_loss:
+            best_val_loss = test_loss
+            patience_counter = 0
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch + 1}")
+                break
+
+    if best_model_state:
+        model.load_state_dict(best_model_state)
     progress_bar.close()
     print("Training completed.")
     return train_metrics_log, val_metrics_log
+
 
 
 # %% [markdown]
@@ -506,13 +532,13 @@ def training_model(model, optimizer, criterion, metrics, train_loader, val_loade
 
 # %%
 def precision(preds, target):
-    return precision_score(target, preds, average='macro')
+    return precision_score(target, preds, average='macro',zero_division=0)
 
 def recall(preds, target):
-    return recall_score(target, preds,average='macro')
+    return recall_score(target, preds,average='macro',zero_division=0)
 
 def f1(preds, target):
-    return f1_score(target, preds, average='macro')
+    return f1_score(target, preds, average='macro',zero_division=0)
 
 def acc(preds, target):
     return accuracy_score(target, preds)
@@ -545,8 +571,6 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
     all_predictions = []
     all_labels = []
 
-    epoch_metrics = dict(zip(metrics.keys(), torch.zeros(len(metrics))))
-
     # Use tqdm for the evaluation dataloader
     eval_iterator = tqdm(test_dataloader, desc='Evaluating Test Set')
 
@@ -576,7 +600,7 @@ def testing(model, metrics, test_dataloader, device, progress_bar):
 
      # Compute metrics on the entire dataset
     test_metrics = {k: metrics[k](all_predictions, all_labels) for k in metrics.keys()}
-    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"])
+    metrics_report = classification_report(all_predictions,all_labels,digits = 3,target_names=["not_hate", "implicit_hate", "explicit_hate"], zero_division=0)
         
     return test_metrics, metrics_report
 
@@ -624,7 +648,7 @@ test_metrics, metrics_report = testing_process(model, metrics, test_dataloader, 
 # Save the testing results in a file
 
 # %%
-saveMetrics(test_metrics, "Testing results metrices")
+saveMetrics(test_metrics, metrics_report)
 showMetrics()
 
 # %%
