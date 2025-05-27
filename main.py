@@ -38,8 +38,8 @@ SEPERATED_DATASET = False # if True, the dataset is separated in training and te
 
 MODEL_NAME = 'GroNLP/hateBERT'
 if SEPERATED_DATASET:
-    TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/augmented_explicit_only/FINAL_TRAINING_SET.tsv'      # 'data/implicit-hate-corpus/TRAINING_VALIDATION_SET.tsv'
-    TESTING_DATA_PATH             = 'data/implicit-hate-corpus/augmented_explicit_only/FINAL_TESTING_SET.tsv'       # 'data/implicit-hate-corpus/TESTING_SET.tsv' 
+    TRAINING_VALIDATION_DATA_PATH = 'data/implicit-hate-corpus/final-augmentation-sets/FINAL_TRAINING_SET.tsv'
+    TESTING_DATA_PATH             = 'data/implicit-hate-corpus/final-augmentation-sets/FINAL_TESTING_SET.tsv'
 else:
     DATA_PATH = 'data/implicit-hate-corpus/implicit_hate_v1_stg1_posts.tsv' 
     
