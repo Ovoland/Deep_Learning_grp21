@@ -47,22 +47,40 @@ Many automated systems struggle to detect **implicit hate speech**, where hatefu
 - Modular data pipeline with PyTorch `Dataset` and `DataLoader`  
 - Configurable hyperparameters (learning rate, batch size, epochs, dropout)  
 - Automatic logging of training & testing metrics to `results/`  
-- Plots training curves (loss & accuracy)  
+- Plots training curves (loss, precision, recall, accuracy and F1-score)
 - Support for k-fold cross-validation  
 
 ---
 
 ## Dataset
 
+### Original dataset
+
 We use the **Stage-1** split of the [Latent Hatred implicit hate corpus](https://github.com/SALT-NLP/implicit-hate):
 
 - **File:** `implicit_hate_v1_stg1.tsv`  
 - **Columns:**  
-  - `ID`  
   - `post` (full tweet text)  
   - `class` ∈ {`explicit_hate`, `implicit_hate`, `not_hate`}  
 
 > **Note:** Many tweets in the original corpus are no longer accessible; the provided stage-1 TSV includes full text only.
+
+This original dataset contained the following distribution of class labels: 13'291 `not_hate`, 7'100 `implicit_hate` and 1'089 `explicit_hate`.
+
+### Augmented dataset
+
+To counter these unbalanced distributions, we generated with an LLM model (ChatGPT-o3) by adding 6'192 `implicit_hate` samples and 12'203 `explicit_hate` samples that can be seen in the `generated_implicit_explicit_hate.tsv` file or, respectively, in the `generated_implicit_ONLY.tsv` and `generated_explicit_ONLY.tsv` files.
+
+But in our implementation we did not use all of these generated datas. Here is the maths on how we determined the number of generated data to use while keeping a 60% ratio for training, 20% for validation and 20% for testing.
+
+We selected a 30% pre-testing-ratio which, when multiplied by the number in each class, gives the following testing subset: 3'987 `not_hate`, 2'130 `implicit_hate` and 327 `explicit_hate`. From these we added as much generated samples needed to reach back the targeted 60-to-20-to-20 ratio. By running the maths we get that we need:
+0 generated `not_hate`, 4'334 generated `implicit_hate` and 8'541 generated `explicit_hate`.
+
+This allows us to keep only original data for our testing and to have a balanced dataset for training. Below are three plots that illustrate our augmented dataset class distribution:
+
+<img src="data/augmented_data_distribution.png" alt="Augmented Data Distribution" width="340"/>
+<img src="data/augmented_data_training.png" alt="Augmented Data Training" width="350"/>
+<img src="data/augmented_data_testing.png" alt="Augmented Data Testing" width="350"/>
 
 ---
 
@@ -198,7 +216,7 @@ For more details and documentation about the underlying theory, please refer to 
 
 ## License
 
-This project is released under the **EPFL License**. See [LICENSE](LICENSE) for details.
+This project is released under the **CC-BY License** <span style="color:red"> ... je suis pas sur de ça: </span> [différent types de license](https://www.epfl.ch/education/educational-initiatives/cede/open-and-accessible-education/selecting-the-appropriate-licence/)
 
 ---
 
