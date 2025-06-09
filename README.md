@@ -69,9 +69,9 @@ This original dataset contained the following distribution of class labels: 13'2
 
 ### Augmented dataset
 
-To counter these unbalanced distributions, we generated with an LLM model (ChatGPT-o3) by adding 6'192 `implicit_hate` samples and 12'203 `explicit_hate` samples that can be seen in the `generated_implicit_explicit_hate.tsv` file or, respectively, in the `generated_implicit_ONLY.tsv` and `generated_explicit_ONLY.tsv` files.
+To counter these unbalanced distributions, we generated with an LLM model (ChatGPT-o3) by adding 4'334 `implicit_hate` samples and 8'541 `explicit_hate` samples. The final augmented dataset can be seen in the `data/implicit-hate-corpus/final-augmentation-sets/` folder with its already seperated files `FINAL_TRAINING_SET.tsv` and `FINAL_TESTING_SET.tsv`. Those 2 files were generated from the folder `data/implicit-hate-corpus/generated_samples` using the `dataset_csv_generation.py` script.
 
-But in our implementation we did not use all of these generated datas. Here is the maths on how we determined the number of generated data to use while keeping a 60% ratio for training, 20% for validation and 20% for testing.
+Here is the maths on how we determined the number of generated data to use while keeping a 60% ratio for training, 20% for validation and 20% for testing.
 
 We selected a 30% pre-testing-ratio which, when multiplied by the number in each class, gives the following testing subset: 3'987 `not_hate`, 2'130 `implicit_hate` and 327 `explicit_hate`. From these we added as much generated samples needed to reach back the targeted 60-to-20-to-20 ratio. By running the maths we get that we need:
 0 generated `not_hate`, 4'334 generated `implicit_hate` and 8'541 generated `explicit_hate`.
@@ -81,6 +81,7 @@ This allows us to keep only original data for our testing and to have a balanced
 <img src="data/augmented_data_distribution.png" alt="Augmented Data Distribution" width="340"/>
 <img src="data/augmented_data_training.png" alt="Augmented Data Training" width="350"/>
 <img src="data/augmented_data_testing.png" alt="Augmented Data Testing" width="350"/>
+
 
 ---
 
@@ -94,9 +95,12 @@ This allows us to keep only original data for our testing and to have a balanced
 │   │   │   ├── FINAL_TESTING_SET.tsv
 │   │   │   └── FINAL_TRAINING_SET.tsv
 │   │   ├── implicit_hate_v1_stg1.tsv
-│   │   ├── generated_implicit_ONLY.tsv
-│   │   ├── generated_explicit_ONLY.tsv
-│   │   └── generated_implicit_explicit_hate.tsv
+│   │   ├── ...
+│   │   └── generated_samples
+│   │        ├── EXPANDED_TOTAL_SET_BY_CHATGPT.tsv
+│   │        ├── generated_implicit_ONLY.tsv
+│   │        ├── generated_explicit_ONLY.tsv
+│   │        └── generated_implicit_explicit_hate.tsv
 │   └── implicit_hate_corpus_paper.pdf
 ├── results/
 │   ├── results_<timestamp>/
@@ -214,9 +218,4 @@ For more details and documentation about the underlying theory, please refer to 
 
 ---
 
-## License
-
-This project is released under the **CC-BY License** <span style="color:red"> ... je suis pas sur de ça: </span> [différent types de license](https://www.epfl.ch/education/educational-initiatives/cede/open-and-accessible-education/selecting-the-appropriate-licence/)
-
----
 
